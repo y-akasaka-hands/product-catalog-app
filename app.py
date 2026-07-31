@@ -172,9 +172,7 @@ if uploaded_files:
                 else:
                     df_detail_grouped = pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "item_code", "sales"])
 
-                # ----------------------------------------------------
                 # 店舗別集計サマリーの構築（000 全店 + 各店舗）
-                # ----------------------------------------------------
                 store_list = [
                     {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高（売単価×数量）": amt}
                     for name, amt in store_totals.items()
@@ -183,7 +181,6 @@ if uploaded_files:
 
                 total_sales_all = df_stores_only["売上高（売単価×数量）"].sum()
 
-                # 全店行（000）を先頭に追加
                 df_total_row = pd.DataFrame([{
                     "店コード": "000",
                     "店舗名": "全店",
@@ -192,10 +189,8 @@ if uploaded_files:
                 
                 df_result_store = pd.concat([df_total_row, df_stores_only], ignore_index=True)
 
-                # 構成比の計算 (C列 ÷ C2)
                 df_result_store["構成比"] = df_result_store["売上高（売単価×数量）"] / total_sales_all if total_sales_all > 0 else 0.0
 
-                # 協賛額の計算
                 rate_val = (sponsor_rate_input / 100.0) if sponsor_rate_input is not None else None
 
                 if rate_val is not None:
@@ -235,7 +230,7 @@ if uploaded_files:
 
                 st.divider()
 
-                # 7. 🎨 装飾付き Excel データの生成 (openpyxl)
+                # 7. 🎨 装飾付き Multi-sheet Excel データの生成 (openpyxl)
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
                     # ① 店舗別集計シート
@@ -266,6 +261,9 @@ if uploaded_files:
 
                         df_v_export.to_excel(writer, index=False, sheet_name=sheet_title)
 
+                    # ③ 「商品カタログ」原本シートのコピー追加
+                    df_cat.to_excel(writer, index=False, header=False, sheet_name="商品カタログ")
+
                     # デザイン共通スタイルの定義
                     FONT_NAME = "メイリオ"
                     header_font = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
@@ -280,16 +278,18 @@ if uploaded_files:
                         bottom=Side(style="thin", color="D9D9D9"),
                     )
 
-                    # 「全店」行の下に引く太罫線/区切り線
                     total_bottom_border = Border(
                         left=Side(style="thin", color="D9D9D9"),
                         right=Side(style="thin", color="D9D9D9"),
                         top=Side(style="thin", color="D9D9D9"),
-                        bottom=Side(style="double", color="000000"),  # 二重線
+                        bottom=Side(style="double", color="000000"),
                     )
 
-                    # 全シートへのデザイン適用
+                    # 各集計シートへのデザイン適用（「商品カタログ」シートは除く）
                     for sheet_name in writer.sheets.keys():
+                        if sheet_name == "商品カタログ":
+                            continue
+
                         ws = writer.sheets[sheet_name]
 
                         # ヘッダー行装飾
@@ -300,42 +300,36 @@ if uploaded_files:
                             cell.alignment = Alignment(horizontal="center", vertical="center")
 
                         if sheet_name == "店舗別集計":
-                            # データ行の装飾
                             for row_num in range(2, ws.max_row + 1):
-                                is_total_row = (row_num == 2)  # 2行目が000 全店
+                                is_total_row = (row_num == 2)
                                 current_font = total_font if is_total_row else body_font
                                 current_border = total_bottom_border if is_total_row else thin_border
 
-                                # A列: 店コード
                                 c1 = ws.cell(row=row_num, column=1)
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
                                 c1.number_format = "@"
                                 c1.border = current_border
 
-                                # B列: 店舗名
                                 c2 = ws.cell(row=row_num, column=2)
                                 c2.font = current_font
                                 c2.alignment = Alignment(horizontal="left")
                                 c2.border = current_border
 
-                                # C列: 売上高
                                 c3 = ws.cell(row=row_num, column=3)
                                 c3.font = current_font
                                 c3.alignment = Alignment(horizontal="right")
                                 c3.number_format = "#,##0"
                                 c3.border = current_border
 
-                                # D列: 構成比
                                 c4 = ws.cell(row=row_num, column=4)
                                 c4.font = current_font
                                 c4.alignment = Alignment(horizontal="right")
                                 c4.number_format = "0.0%"
                                 if is_total_row:
-                                    c4.value = None  # 全店行の構成比欄は空欄
+                                    c4.value = None
                                 c4.border = current_border
 
-                                # E列: 協賛額
                                 c5 = ws.cell(row=row_num, column=5)
                                 c5.font = current_font
                                 c5.alignment = Alignment(horizontal="right")
@@ -345,7 +339,6 @@ if uploaded_files:
                                     c5.value = None
                                 c5.border = current_border
 
-                                # F列: 協賛料率
                                 c6 = ws.cell(row=row_num, column=6)
                                 c6.font = current_font
                                 c6.alignment = Alignment(horizontal="right")
@@ -356,7 +349,6 @@ if uploaded_files:
                                 c6.border = current_border
 
                         else:
-                            # 取引先別シート
                             for row_num in range(2, ws.max_row + 1):
                                 for col_num in range(1, ws.max_column + 1):
                                     cell = ws.cell(row=row_num, column=col_num)
