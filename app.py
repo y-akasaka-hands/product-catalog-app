@@ -41,7 +41,6 @@ if uploaded_files:
             store_map = {}
             for idx, row in df_store_raw.iterrows():
                 if pd.notna(row[1]) and pd.notna(row[2]):
-                    # 3桁ゼロ埋め処理
                     raw_code = str(row[1]).strip()
                     if raw_code.replace('.0', '').isdigit():
                         code = str(int(float(raw_code))).zfill(3)
@@ -52,8 +51,8 @@ if uploaded_files:
 
             # 2. 商品カタログの読み込み
             df_cat = pd.read_excel(catalog_file, header=None)
-            row11 = df_cat.iloc[11].values  # 12行目 (店舗名や上位カテゴリ)
-            row12 = df_cat.iloc[12].values  # 13行目 (売上数・売上高など)
+            row11 = df_cat.iloc[11].values  # 12行目 (店舗名)
+            row12 = df_cat.iloc[12].values  # 13行目 (売上数・売単価など)
 
             # 3. 「売単価」列の位置を判定
             unit_price_col_idx = -1
@@ -70,19 +69,22 @@ if uploaded_files:
             unit_prices = pd.to_numeric(df_cat.iloc[13:, unit_price_col_idx], errors='coerce').fillna(0)
 
             # 4. 各店舗の「売上数」列の位置と店舗名を正確に特定
-            current_store = ""
-            store_columns = []  # (店舗名, 列インデックス) のリスト
+            # ※12行目（row11）に明示的に店舗名が記述されている列のみを対象とする
+            store_columns = []  # (店舗名, 売上数_列インデックス)
 
-            for col_idx in range(len(row12)):
+            for col_idx in range(len(row11)):
                 top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
-                sub_val = str(row12[col_idx]).strip() if pd.notna(row12[col_idx]) else ""
-
-                if top_val != "":
-                    current_store = top_val
-
-                # 除外対象（品番・枝番・取引先）以外の「売上数」列を抽出
-                if sub_val == "売上数" and current_store not in ["", "品番", "枝番", "取引先"]:
-                    store_columns.append((current_store, col_idx))
+                
+                # 12行目に店舗名がしっかり入っている列のみ処理（空欄の列はスキップ）
+                if top_val != "" and top_val not in ["品番", "枝番", "取引先"]:
+                    # その店舗名の範囲内（右側3列以内）にある「売上数」の列を探す
+                    for offset in range(3):
+                        check_idx = col_idx + offset
+                        if check_idx < len(row12):
+                            sub_val = str(row12[check_idx]).strip() if pd.notna(row12[check_idx]) else ""
+                            if sub_val == "売上数":
+                                store_columns.append((top_val, check_idx))
+                                break
 
             # 5. 店舗ごとに「売単価 × 売上数」を算出して合計
             store_results = []
@@ -113,13 +115,12 @@ if uploaded_files:
             with col1:
                 st.subheader("📋 店舗別売上高一覧")
                 st.dataframe(
-                    result_df.style.format({"売上高（売単価×数量） ভূম": "¥{:,.0f}"}),
+                    result_df.style.format({"売上高（売単価×数量）": "¥{:,.0f}"}),
                     use_container_width=True
                 )
             
             with col2:
                 st.subheader("📊 概況")
-                # 「全店」を除いた純粋な各店合計、または全体の合計を計算
                 total_sales = result_df["売上高（売単価×数量）"].sum()
                 st.metric("データ合計 売上高", f"¥{int(total_sales):,}")
                 
