@@ -11,11 +11,19 @@ st.markdown("""
 2. 自動的に「売単価 × 売上数」で計算された店舗別売上高が集計されます。
 """)
 
+# リセット処理関数
+def reset_app():
+    # セッション状態をクリアして画面をリロード
+    for key in list(st.session_state.keys()):
+        del st.session_state[key]
+    st.rerun()
+
 # ファイルアップローダー（複数ファイルの受け入れ）
 uploaded_files = st.file_uploader(
     "「商品カタログ」と「店コード表」をアップロード（複数可）", 
     type=["xlsx", "xls"], 
-    accept_multiple_files=True
+    accept_multiple_files=True,
+    key="file_uploader"
 )
 
 if uploaded_files:
@@ -69,15 +77,13 @@ if uploaded_files:
             unit_prices = pd.to_numeric(df_cat.iloc[13:, unit_price_col_idx], errors='coerce').fillna(0)
 
             # 4. 各店舗の「売上数」列の位置と店舗名を正確に特定
-            # ※12行目（row11）に明示的に店舗名が記述されている列のみを対象とする
-            store_columns = []  # (店舗名, 売上数_列インデックス)
+            store_columns = []
 
             for col_idx in range(len(row11)):
                 top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
                 
-                # 12行目に店舗名がしっかり入っている列のみ処理（空欄の列はスキップ）
+                # 12行目に店舗名がしっかり入っている列のみ処理
                 if top_val != "" and top_val not in ["品番", "枝番", "取引先"]:
-                    # その店舗名の範囲内（右側3列以内）にある「売上数」の列を探す
                     for offset in range(3):
                         check_idx = col_idx + offset
                         if check_idx < len(row12):
@@ -89,13 +95,8 @@ if uploaded_files:
             # 5. 店舗ごとに「売単価 × 売上数」を算出して合計
             store_results = []
             for store_name, col_idx in store_columns:
-                # 対象店舗の売上数を取得して数値化
                 qty_series = pd.to_numeric(df_cat.iloc[13:, col_idx], errors='coerce').fillna(0)
-                
-                # 売単価 × 数量 の合計
                 sales_amount = (qty_series * unit_prices).sum()
-
-                # 店コードの取得（コード表にない場合は '999'）
                 code = store_map.get(store_name, "999")
 
                 store_results.append({
@@ -133,7 +134,18 @@ if uploaded_files:
                     label="📥 集計結果（Excel）をダウンロード",
                     data=output.getvalue(),
                     file_name=f"店舗別売上集計_{catalog_file.name}",
-                    mime="application/vnd.ms-excel"
+                    mime="application/vnd.ms-excel",
+                    use_container_width=True
+                )
+
+                st.divider()
+
+                # 初期画面（クリア）に戻るボタン
+                st.button(
+                    "🔄 最初の画面に戻る（選択解除）", 
+                    on_click=reset_app, 
+                    type="secondary",
+                    use_container_width=True
                 )
 
         except Exception as e:
