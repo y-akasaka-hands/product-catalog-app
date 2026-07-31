@@ -7,36 +7,36 @@ import streamlit as st
 
 st.set_page_config(page_title="商品カタログ 店舗・取引先別売上集計", layout="wide")
 
-# Custom CSS: 立体的で目立つダウンロードボタンのスタイリング
+# Custom CSS: ダウンロードボタン＆リセットボタン共通の立体的・大文字デザイン
 st.markdown("""
 <style>
-/* ダウンロードボタンの立体デザイン */
-div.stDownloadButton > button {
+/* ダウンロードボタン ＆ 通常ボタン（リセットボタン）共通立体デザイン */
+div.stDownloadButton > button, div.stButton > button {
     background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
     color: #ffffff !important;
-    font-size: 18px !important;
-    font-weight: bold !important;
-    padding: 14px 28px !important;
+    font-size: 20px !important;
+    font-weight: 800 !important;
+    padding: 16px 28px !important;
     border-radius: 8px !important;
     border: none !important;
-    border-bottom: 4px solid #145222 !important;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.25) !important;
+    border-bottom: 5px solid #145222 !important;
+    box-shadow: 0px 5px 10px rgba(0, 0, 0, 0.3) !important;
     transition: all 0.15s ease-in-out !important;
     width: 100% !important;
 }
 
 /* ホバー時の浮き上がり効果 */
-div.stDownloadButton > button:hover {
+div.stDownloadButton > button:hover, div.stButton > button:hover {
     background: linear-gradient(180deg, #34ce57 0%, #218838 100%) !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.3) !important;
+    box-shadow: 0px 7px 14px rgba(0, 0, 0, 0.35) !important;
     color: #ffffff !important;
 }
 
 /* クリック時の押し込み効果 */
-div.stDownloadButton > button:active {
-    transform: translateY(2px) !important;
-    border-bottom: 1px solid #145222 !important;
+div.stDownloadButton > button:active, div.stButton > button:active {
+    transform: translateY(3px) !important;
+    border-bottom: 2px solid #145222 !important;
     box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2) !important;
 }
 </style>
@@ -417,7 +417,7 @@ if uploaded_files:
                             ws.column_dimensions[col_letter].width = max(max_len + 5, 14)
 
                 # ダウンロード ＆ リセットボタンエリア
-                col_dl, col_rst = st.columns([2, 1])
+                col_dl, col_rst = st.columns([1, 1])
                 with col_dl:
                     st.download_button(
                         label="📥 集計結果（Excel）をダウンロード",
@@ -431,7 +431,6 @@ if uploaded_files:
                     st.button(
                         "🔄 最初の画面に戻る（全リセット）",
                         on_click=reset_app,
-                        type="secondary",
                         use_container_width=True,
                     )
 
