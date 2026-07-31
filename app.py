@@ -55,11 +55,10 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
-# リセット処理関数
+# リセット処理関数（警告を出さないよう内部処理を修正）
 def reset_app():
     st.session_state.run_calc = False
     st.session_state.uploader_key += 1
-    st.rerun()
 
 
 # シート名修正関数
@@ -385,7 +384,6 @@ if uploaded_files:
                             current_border = total_bottom_border if is_total_row else thin_border
 
                             if sheet_name == "店舗別集計":
-                                # A: 店コード, B: 店舗名, C: 売上高, D: 構成比, E: 協賛額, F: 協賛料率
                                 c1 = ws.cell(row=row_num, column=1)
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
@@ -430,37 +428,36 @@ if uploaded_files:
                                 c6.border = current_border
 
                             else:
-                                # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:品番, E:売上高, F:構成比, G:協賛額, H:協賛料率)
-                                c1 = ws.cell(row=row_num, column=1)  # 取引先コード
+                                c1 = ws.cell(row=row_num, column=1)
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
                                 c1.number_format = "@"
                                 c1.border = current_border
 
-                                c2 = ws.cell(row=row_num, column=2)  # 取引先名
+                                c2 = ws.cell(row=row_num, column=2)
                                 c2.font = current_font
                                 c2.alignment = Alignment(horizontal="left")
                                 c2.border = current_border
 
-                                c3 = ws.cell(row=row_num, column=3)  # 店コード
+                                c3 = ws.cell(row=row_num, column=3)
                                 c3.font = current_font
                                 c3.alignment = Alignment(horizontal="center")
                                 c3.number_format = "@"
                                 c3.border = current_border
 
-                                c4 = ws.cell(row=row_num, column=4)  # 品番
+                                c4 = ws.cell(row=row_num, column=4)
                                 c4.font = current_font
                                 c4.alignment = Alignment(horizontal="center")
                                 c4.number_format = "@"
                                 c4.border = current_border
 
-                                c5 = ws.cell(row=row_num, column=5)  # 売上高
+                                c5 = ws.cell(row=row_num, column=5)
                                 c5.font = current_font
                                 c5.alignment = Alignment(horizontal="right")
                                 c5.number_format = "#,##0"
                                 c5.border = current_border
 
-                                c6 = ws.cell(row=row_num, column=6)  # 構成比
+                                c6 = ws.cell(row=row_num, column=6)
                                 c6.font = current_font
                                 c6.alignment = Alignment(horizontal="right")
                                 c6.number_format = "0.0%"
@@ -468,7 +465,7 @@ if uploaded_files:
                                     c6.value = None
                                 c6.border = current_border
 
-                                c7 = ws.cell(row=row_num, column=7)  # 協賛額
+                                c7 = ws.cell(row=row_num, column=7)
                                 c7.font = current_font
                                 c7.alignment = Alignment(horizontal="right")
                                 if rate_val is not None:
@@ -477,7 +474,7 @@ if uploaded_files:
                                     c7.value = None
                                 c7.border = current_border
 
-                                c8 = ws.cell(row=row_num, column=8)  # 協賛料率
+                                c8 = ws.cell(row=row_num, column=8)
                                 c8.font = current_font
                                 c8.alignment = Alignment(horizontal="right")
                                 if is_total_row and rate_val is not None:
