@@ -11,7 +11,8 @@ st.title("📊 商品カタログ 店舗・取引先別売上集計ツール")
 st.markdown("""
 **使い方:**
 1. 下記のエリアに「**⑩店コード表.xlsx**」と「**商品カタログ_〜.xlsx**」を2つ同時にドラッグ＆ドロップしてください。
-2. 「**🚀 集計を開始する**」ボタンを押すと、店舗別および各取引先ごとの「店コード・品番別売上高」が集計されます。
+2. 必要に応じて「**協賛料率（％）**」を入力してください（空欄でも集計可能です）。
+3. 「**🚀 集計を開始する**」ボタンを押すと集計結果が生成されます。
 """)
 
 # セッション状態の初期化
@@ -21,33 +22,45 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
-# 完全リセット処理関数
+# リセット処理関数
 def reset_app():
     st.session_state.run_calc = False
     st.session_state.uploader_key += 1
     st.rerun()
 
 
-# Excelシート名で使えない記号の除去関数
+# シート名修正関数
 def clean_sheet_name(name):
-    # \ / ? * : [ ] を除去し、最大31文字に制限
     cleaned = re.sub(r"[\\/*?:\[\]]", "", str(name))
     return cleaned[:31] if cleaned else "Sheet"
 
 
-# ファイルアップローダー
-uploaded_files = st.file_uploader(
-    "「商品カタログ」と「店コード表」をアップロード（複数可）",
-    type=["xlsx", "xls"],
-    accept_multiple_files=True,
-    key=f"file_uploader_{st.session_state.uploader_key}",
-)
+# 入力エリアの構築
+col_file, col_rate = st.columns([3, 1])
+
+with col_file:
+    uploaded_files = st.file_uploader(
+        "「商品カタログ」と「店コード表」をアップロード（複数可）",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+        key=f"file_uploader_{st.session_state.uploader_key}",
+    )
+
+with col_rate:
+    sponsor_rate_input = st.number_input(
+        "協賛料率（％）",
+        min_value=0.0,
+        max_value=100.0,
+        value=None,
+        step=0.5,
+        format="%.1f",
+        help="例: 10 と入力すると 10% として計算されます（空欄可）",
+    )
 
 if uploaded_files:
     catalog_file = None
     store_code_file = None
 
-    # ファイルの判別
     for f in uploaded_files:
         if "店コード表" in f.name:
             store_code_file = f
@@ -61,7 +74,7 @@ if uploaded_files:
 
     if store_code_file and catalog_file:
         if not st.session_state.run_calc:
-            st.info("💡 ファイルの準備ができました。下のボタンを押して集計を開始してください。")
+            st.info("💡 ファイルの準備ができました。「集計を開始する」ボタンを押してください。")
             if st.button("🚀 集計を開始する", type="primary", use_container_width=True):
                 st.session_state.run_calc = True
                 st.rerun()
@@ -86,7 +99,7 @@ if uploaded_files:
                 row11 = df_cat.iloc[11].values  # 12行目 (店舗名)
                 row12 = df_cat.iloc[12].values  # 13行目 (売上数・売単価など)
 
-                # 3. 「売単価」列の位置を判定
+                # 3. 「売単価」列の位置判定
                 unit_price_col_idx = -1
                 for idx, val in enumerate(row12):
                     if pd.notna(val) and str(val).strip() == "売単価":
@@ -97,11 +110,10 @@ if uploaded_files:
                     st.error("❌ 商品カタログ内に「売単価」の列が見つかりませんでした。")
                     st.stop()
 
-                # 実データ部分（14行目以降）
                 df_data = df_cat.iloc[13:].copy()
                 unit_prices = pd.to_numeric(df_data[unit_price_col_idx], errors="coerce").fillna(0)
 
-                # 4. 各店舗の「売上数」列の位置と店舗名を特定
+                # 4. 各店舗の「売上数」列の位置特定
                 store_columns = []
                 for col_idx in range(len(row11)):
                     top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
@@ -114,7 +126,7 @@ if uploaded_files:
                                     store_columns.append((top_val, check_idx))
                                     break
 
-                # 取引先コード (Col 8), 取引先名 (Col 9), 品番 (Col 2) の抽出
+                # 5. 明細データおよび店舗別売上の計算
                 df_data["vendor_code"] = df_data[8].apply(
                     lambda x: str(int(float(x))).zfill(7)
                     if pd.notna(x) and str(x).replace(".0", "").isdigit()
@@ -131,7 +143,6 @@ if uploaded_files:
                     else ""
                 )
 
-                # 5. 明細データの集計（取引先 × 店コード × 品番）
                 records = []
                 store_totals = {}
 
@@ -150,11 +161,9 @@ if uploaded_files:
                         "item_code": df_data["item_code"],
                         "sales": sales_series
                     })
-                    # 売上高 > 0 の行のみ保持
                     temp_df = temp_df[temp_df["sales"] > 0]
                     records.append(temp_df)
 
-                # 全明細の結合
                 if records:
                     df_all_details = pd.concat(records, ignore_index=True)
                     df_detail_grouped = df_all_details.groupby(
@@ -163,22 +172,59 @@ if uploaded_files:
                 else:
                     df_detail_grouped = pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "item_code", "sales"])
 
-                # 店舗別サマリーデータの作成
-                df_result_store = pd.DataFrame([
+                # ----------------------------------------------------
+                # 店舗別集計サマリーの構築（000 全店 + 各店舗）
+                # ----------------------------------------------------
+                store_list = [
                     {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高（売単価×数量）": amt}
                     for name, amt in store_totals.items()
-                ]).sort_values(by="店コード").reset_index(drop=True)
+                ]
+                df_stores_only = pd.DataFrame(store_list).sort_values(by="店コード").reset_index(drop=True)
+
+                total_sales_all = df_stores_only["売上高（売単価×数量）"].sum()
+
+                # 全店行（000）を先頭に追加
+                df_total_row = pd.DataFrame([{
+                    "店コード": "000",
+                    "店舗名": "全店",
+                    "売上高（売単価×数量）": total_sales_all
+                }])
+                
+                df_result_store = pd.concat([df_total_row, df_stores_only], ignore_index=True)
+
+                # 構成比の計算 (C列 ÷ C2)
+                df_result_store["構成比"] = df_result_store["売上高（売単価×数量）"] / total_sales_all if total_sales_all > 0 else 0.0
+
+                # 協賛額の計算
+                rate_val = (sponsor_rate_input / 100.0) if sponsor_rate_input is not None else None
+
+                if rate_val is not None:
+                    total_sponsor = total_sales_all * rate_val
+                    df_result_store["協賛額"] = df_result_store["構成比"] * total_sponsor
+                    df_result_store["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_result_store))]
+                else:
+                    df_result_store["協賛額"] = None
+                    df_result_store["協賛料率"] = None
 
                 # 6. 結果の表示
                 st.success("✅ 集計が完了しました！")
 
-                tab1, tab2 = st.tabs(["🏬 店舗別売上サマリー", "🏢 取引先別・店コード・品番別明細"])
+                tab1, tab2 = st.tabs(["🏬 店舗別集計", "🏢 取引先別・店コード・品番別明細"])
 
                 with tab1:
+                    fmt_dict = {
+                        "売上高（売単価×数量）": "{:,.0f}",
+                        "構成比": "{:.1%}"
+                    }
+                    if rate_val is not None:
+                        fmt_dict["協賛額"] = "{:,.0f}"
+                        fmt_dict["協賛料率"] = lambda x: f"{x:.0%}" if pd.notna(x) else ""
+
                     st.dataframe(
-                        df_result_store.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
+                        df_result_store.style.format(fmt_dict, na_rep=""),
                         use_container_width=True,
                     )
+
                 with tab2:
                     df_preview = df_detail_grouped.copy()
                     df_preview.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
@@ -189,16 +235,14 @@ if uploaded_files:
 
                 st.divider()
 
-                # 7. 🎨 装飾付き Multi-sheet Excelデータの生成 (openpyxl)
+                # 7. 🎨 装飾付き Excel データの生成 (openpyxl)
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                    # ① 店舗別売上シート
-                    df_result_store.to_excel(writer, index=False, sheet_name="店舗別売上")
+                    # ① 店舗別集計シート
+                    df_result_store.to_excel(writer, index=False, sheet_name="店舗別集計")
 
-                    # ② 取引先ごとの個別シート
+                    # ② 取引先別シート
                     unique_vendors = df_detail_grouped[["vendor_code", "vendor_name"]].drop_duplicates()
-                    
-                    # 取引先名でソートして順次シート作成
                     for _, v_row in unique_vendors.iterrows():
                         v_code = v_row["vendor_code"]
                         v_name = v_row["vendor_name"]
@@ -210,12 +254,9 @@ if uploaded_files:
 
                         df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "item_code", "sales"]].copy()
                         df_v_export.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
-                        
-                        # 店コード -> 品番 の昇順並び替え
                         df_v_export = df_v_export.sort_values(by=["店コード", "品番"]).reset_index(drop=True)
 
                         sheet_title = clean_sheet_name(v_name)
-                        # シート名の重複回避
                         existing_sheets = writer.sheets.keys()
                         base_title = sheet_title
                         counter = 1
@@ -230,6 +271,8 @@ if uploaded_files:
                     header_font = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
                     header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
                     body_font = Font(name=FONT_NAME, size=10)
+                    total_font = Font(name=FONT_NAME, size=10, bold=True)
+                    
                     thin_border = Border(
                         left=Side(style="thin", color="D9D9D9"),
                         right=Side(style="thin", color="D9D9D9"),
@@ -237,7 +280,15 @@ if uploaded_files:
                         bottom=Side(style="thin", color="D9D9D9"),
                     )
 
-                    # 全シートへのデザイン一括適用
+                    # 「全店」行の下に引く太罫線/区切り線
+                    total_bottom_border = Border(
+                        left=Side(style="thin", color="D9D9D9"),
+                        right=Side(style="thin", color="D9D9D9"),
+                        top=Side(style="thin", color="D9D9D9"),
+                        bottom=Side(style="double", color="000000"),  # 二重線
+                    )
+
+                    # 全シートへのデザイン適用
                     for sheet_name in writer.sheets.keys():
                         ws = writer.sheets[sheet_name]
 
@@ -248,30 +299,76 @@ if uploaded_files:
                             cell.fill = header_fill
                             cell.alignment = Alignment(horizontal="center", vertical="center")
 
-                        # データ行装飾
-                        for row_num in range(2, ws.max_row + 1):
-                            for col_num in range(1, ws.max_column + 1):
-                                cell = ws.cell(row=row_num, column=col_num)
-                                cell.font = body_font
-                                cell.border = thin_border
+                        if sheet_name == "店舗別集計":
+                            # データ行の装飾
+                            for row_num in range(2, ws.max_row + 1):
+                                is_total_row = (row_num == 2)  # 2行目が000 全店
+                                current_font = total_font if is_total_row else body_font
+                                current_border = total_bottom_border if is_total_row else thin_border
 
-                                if sheet_name == "店舗別売上":
-                                    if col_num == 1:
+                                # A列: 店コード
+                                c1 = ws.cell(row=row_num, column=1)
+                                c1.font = current_font
+                                c1.alignment = Alignment(horizontal="center")
+                                c1.number_format = "@"
+                                c1.border = current_border
+
+                                # B列: 店舗名
+                                c2 = ws.cell(row=row_num, column=2)
+                                c2.font = current_font
+                                c2.alignment = Alignment(horizontal="left")
+                                c2.border = current_border
+
+                                # C列: 売上高
+                                c3 = ws.cell(row=row_num, column=3)
+                                c3.font = current_font
+                                c3.alignment = Alignment(horizontal="right")
+                                c3.number_format = "#,##0"
+                                c3.border = current_border
+
+                                # D列: 構成比
+                                c4 = ws.cell(row=row_num, column=4)
+                                c4.font = current_font
+                                c4.alignment = Alignment(horizontal="right")
+                                c4.number_format = "0.0%"
+                                if is_total_row:
+                                    c4.value = None  # 全店行の構成比欄は空欄
+                                c4.border = current_border
+
+                                # E列: 協賛額
+                                c5 = ws.cell(row=row_num, column=5)
+                                c5.font = current_font
+                                c5.alignment = Alignment(horizontal="right")
+                                if rate_val is not None:
+                                    c5.number_format = "#,##0"
+                                else:
+                                    c5.value = None
+                                c5.border = current_border
+
+                                # F列: 協賛料率
+                                c6 = ws.cell(row=row_num, column=6)
+                                c6.font = current_font
+                                c6.alignment = Alignment(horizontal="right")
+                                if is_total_row and rate_val is not None:
+                                    c6.number_format = "0%"
+                                else:
+                                    c6.value = None
+                                c6.border = current_border
+
+                        else:
+                            # 取引先別シート
+                            for row_num in range(2, ws.max_row + 1):
+                                for col_num in range(1, ws.max_column + 1):
+                                    cell = ws.cell(row=row_num, column=col_num)
+                                    cell.font = body_font
+                                    cell.border = thin_border
+
+                                    if col_num in [1, 3, 4]:
                                         cell.alignment = Alignment(horizontal="center")
                                         cell.number_format = "@"
                                     elif col_num == 2:
                                         cell.alignment = Alignment(horizontal="left")
-                                    elif col_num == 3:
-                                        cell.alignment = Alignment(horizontal="right")
-                                        cell.number_format = "#,##0"
-                                else:
-                                    # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:品番, E:売上高)
-                                    if col_num in [1, 3, 4]:  # コード類（取引先コード, 店コード, 品番）
-                                        cell.alignment = Alignment(horizontal="center")
-                                        cell.number_format = "@"
-                                    elif col_num == 2:  # 取引先名
-                                        cell.alignment = Alignment(horizontal="left")
-                                    elif col_num == 5:  # 売上高
+                                    elif col_num == 5:
                                         cell.alignment = Alignment(horizontal="right")
                                         cell.number_format = "#,##0"
 
@@ -285,7 +382,7 @@ if uploaded_files:
                 col_dl, col_rst = st.columns([2, 1])
                 with col_dl:
                     st.download_button(
-                        label="📥 集集結果（取引先別シート入りExcel）をダウンロード",
+                        label="📥 集計結果（Excel）をダウンロード",
                         data=output.getvalue(),
                         file_name=f"店舗・取引先別売上集計_{catalog_file.name}",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
