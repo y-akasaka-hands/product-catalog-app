@@ -1,16 +1,17 @@
 import io
+import re
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="商品カタログ 店舗別売上集計", layout="wide")
-st.title("📊 商品カタログ 店舗別売上集計ツール")
+st.set_page_config(page_title="商品カタログ 店舗・取引先別売上集計", layout="wide")
+st.title("📊 商品カタログ 店舗・取引先別売上集計ツール")
 
 st.markdown("""
 **使い方:**
 1. 下記のエリアに「**⑩店コード表.xlsx**」と「**商品カタログ_〜.xlsx**」を2つ同時にドラッグ＆ドロップしてください。
-2. 「**🚀 集計を開始する**」ボタンを押すと、店舗別・取引先別・品番別の売上高が集計されます。
+2. 「**🚀 集計を開始する**」ボタンを押すと、店舗別および各取引先ごとの「店コード・品番別売上高」が集計されます。
 """)
 
 # セッション状態の初期化
@@ -23,11 +24,18 @@ if "uploader_key" not in st.session_state:
 # 完全リセット処理関数
 def reset_app():
     st.session_state.run_calc = False
-    st.session_state.uploader_key += 1  # uploaderのキーを変更してファイル選択を完全クリア
+    st.session_state.uploader_key += 1
     st.rerun()
 
 
-# ファイルアップローダー（キー可変でクリア可能に）
+# Excelシート名で使えない記号の除去関数
+def clean_sheet_name(name):
+    # \ / ? * : [ ] を除去し、最大31文字に制限
+    cleaned = re.sub(r"[\\/*?:\[\]]", "", str(name))
+    return cleaned[:31] if cleaned else "Sheet"
+
+
+# ファイルアップローダー
 uploaded_files = st.file_uploader(
     "「商品カタログ」と「店コード表」をアップロード（複数可）",
     type=["xlsx", "xls"],
@@ -51,16 +59,13 @@ if uploaded_files:
     if not catalog_file:
         st.warning("⚠️ 「商品カタログ」が選択されていません。")
 
-    # ファイルが2つ揃っている場合
     if store_code_file and catalog_file:
-        # 集計未実行の場合は「集計開始ボタン」を表示
         if not st.session_state.run_calc:
             st.info("💡 ファイルの準備ができました。下のボタンを押して集計を開始してください。")
             if st.button("🚀 集計を開始する", type="primary", use_container_width=True):
                 st.session_state.run_calc = True
                 st.rerun()
 
-        # 集計実行フラグがONのときに処理を行う
         if st.session_state.run_calc:
             try:
                 # 1. 店コード表の読み込み (B列:コード, C列:店舗名)
@@ -78,7 +83,7 @@ if uploaded_files:
 
                 # 2. 商品カタログの読み込み
                 df_cat = pd.read_excel(catalog_file, header=None)
-                row11 = df_cat.iloc[11].values  # 12行目 (店舗名など)
+                row11 = df_cat.iloc[11].values  # 12行目 (店舗名)
                 row12 = df_cat.iloc[12].values  # 13行目 (売上数・売単価など)
 
                 # 3. 「売単価」列の位置を判定
@@ -109,27 +114,7 @@ if uploaded_files:
                                     store_columns.append((top_val, check_idx))
                                     break
 
-                # 5. 店舗別集計 ＆ 行（商品）ごとの全店売上金額の計算
-                row_total_sales = pd.Series(0.0, index=df_data.index)
-                store_results = []
-
-                for store_name, col_idx in store_columns:
-                    qty_series = pd.to_numeric(df_data[col_idx], errors="coerce").fillna(0)
-                    sales_amount_series = qty_series * unit_prices
-                    row_total_sales += sales_amount_series  # 行ごとの売上金額を加算
-
-                    code = store_map.get(store_name, "999")
-                    store_results.append({
-                        "店コード": code,
-                        "店舗名": store_name,
-                        "売上高（売単価×数量）": sales_amount_series.sum(),
-                    })
-
-                # 店舗別データフレーム作成・並び替え
-                df_result_store = pd.DataFrame(store_results)
-                df_result_store = df_result_store.sort_values(by="店コード").reset_index(drop=True)
-
-                # 6. 取引先別集計 (取引先コード: Col 8, 取引先名: Col 9)
+                # 取引先コード (Col 8), 取引先名 (Col 9), 品番 (Col 2) の抽出
                 df_data["vendor_code"] = df_data[8].apply(
                     lambda x: str(int(float(x))).zfill(7)
                     if pd.notna(x) and str(x).replace(".0", "").isdigit()
@@ -138,17 +123,6 @@ if uploaded_files:
                     else "0000000"
                 )
                 df_data["vendor_name"] = df_data[9].astype(str).str.strip()
-                df_data["row_sales"] = row_total_sales
-
-                df_result_vendor = (
-                    df_data.groupby(["vendor_code", "vendor_name"])["row_sales"]
-                    .sum()
-                    .reset_index()
-                )
-                df_result_vendor.columns = ["取引先コード", "取引先名", "売上高（売単価×数量）"]
-                df_result_vendor = df_result_vendor.sort_values(by="取引先コード").reset_index(drop=True)
-
-                # 7. 品番別集計 (品番コード: Col 2, 品番名: Col 3)
                 df_data["item_code"] = df_data[2].apply(
                     lambda x: str(int(float(x)))
                     if pd.notna(x) and str(x).replace(".0", "").isdigit()
@@ -156,20 +130,49 @@ if uploaded_files:
                     if pd.notna(x)
                     else ""
                 )
-                df_data["item_name"] = df_data[3].astype(str).str.strip()
 
-                df_result_item = (
-                    df_data.groupby(["item_code", "item_name"])["row_sales"]
-                    .sum()
-                    .reset_index()
-                )
-                df_result_item.columns = ["品番コード", "品番名", "売上高（売単価×数量）"]
-                df_result_item = df_result_item.sort_values(by="品番コード").reset_index(drop=True)
+                # 5. 明細データの集計（取引先 × 店コード × 品番）
+                records = []
+                store_totals = {}
 
-                # 8. 結果の表示（タブで切替表示）
+                for store_name, col_idx in store_columns:
+                    qty_series = pd.to_numeric(df_data[col_idx], errors="coerce").fillna(0)
+                    sales_series = qty_series * unit_prices
+                    
+                    store_code = store_map.get(store_name, "999")
+                    store_totals[store_name] = store_totals.get(store_name, 0.0) + sales_series.sum()
+
+                    temp_df = pd.DataFrame({
+                        "vendor_code": df_data["vendor_code"],
+                        "vendor_name": df_data["vendor_name"],
+                        "store_code": store_code,
+                        "store_name": store_name,
+                        "item_code": df_data["item_code"],
+                        "sales": sales_series
+                    })
+                    # 売上高 > 0 の行のみ保持
+                    temp_df = temp_df[temp_df["sales"] > 0]
+                    records.append(temp_df)
+
+                # 全明細の結合
+                if records:
+                    df_all_details = pd.concat(records, ignore_index=True)
+                    df_detail_grouped = df_all_details.groupby(
+                        ["vendor_code", "vendor_name", "store_code", "item_code"], as_index=False
+                    )["sales"].sum()
+                else:
+                    df_detail_grouped = pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "item_code", "sales"])
+
+                # 店舗別サマリーデータの作成
+                df_result_store = pd.DataFrame([
+                    {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高（売単価×数量）": amt}
+                    for name, amt in store_totals.items()
+                ]).sort_values(by="店コード").reset_index(drop=True)
+
+                # 6. 結果の表示
                 st.success("✅ 集計が完了しました！")
 
-                tab1, tab2, tab3 = st.tabs(["🏬 店舗別集計", "🏢 取引先別集計", "📦 品番別集計"])
+                tab1, tab2 = st.tabs(["🏬 店舗別売上サマリー", "🏢 取引先別・店コード・品番別明細"])
 
                 with tab1:
                     st.dataframe(
@@ -177,24 +180,50 @@ if uploaded_files:
                         use_container_width=True,
                     )
                 with tab2:
+                    df_preview = df_detail_grouped.copy()
+                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
                     st.dataframe(
-                        df_result_vendor.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
-                        use_container_width=True,
-                    )
-                with tab3:
-                    st.dataframe(
-                        df_result_item.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
+                        df_preview.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
                         use_container_width=True,
                     )
 
                 st.divider()
 
-                # 9. 🎨 装飾付き Multi-sheet Excelデータの生成 (openpyxl)
+                # 7. 🎨 装飾付き Multi-sheet Excelデータの生成 (openpyxl)
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    # ① 店舗別売上シート
                     df_result_store.to_excel(writer, index=False, sheet_name="店舗別売上")
-                    df_result_vendor.to_excel(writer, index=False, sheet_name="取引先別売上")
-                    df_result_item.to_excel(writer, index=False, sheet_name="品番別売上")
+
+                    # ② 取引先ごとの個別シート
+                    unique_vendors = df_detail_grouped[["vendor_code", "vendor_name"]].drop_duplicates()
+                    
+                    # 取引先名でソートして順次シート作成
+                    for _, v_row in unique_vendors.iterrows():
+                        v_code = v_row["vendor_code"]
+                        v_name = v_row["vendor_name"]
+
+                        df_v = df_detail_grouped[
+                            (df_detail_grouped["vendor_code"] == v_code) & 
+                            (df_detail_grouped["vendor_name"] == v_name)
+                        ].copy()
+
+                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "item_code", "sales"]].copy()
+                        df_v_export.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
+                        
+                        # 店コード -> 品番 の昇順並び替え
+                        df_v_export = df_v_export.sort_values(by=["店コード", "品番"]).reset_index(drop=True)
+
+                        sheet_title = clean_sheet_name(v_name)
+                        # シート名の重複回避
+                        existing_sheets = writer.sheets.keys()
+                        base_title = sheet_title
+                        counter = 1
+                        while sheet_title in existing_sheets:
+                            sheet_title = clean_sheet_name(f"{base_title}_{counter}")
+                            counter += 1
+
+                        df_v_export.to_excel(writer, index=False, sheet_name=sheet_title)
 
                     # デザイン共通スタイルの定義
                     FONT_NAME = "メイリオ"
@@ -208,44 +237,43 @@ if uploaded_files:
                         bottom=Side(style="thin", color="D9D9D9"),
                     )
 
-                    # 3つのシートすべてにデザインを適用する汎用処理
-                    sheet_configs = [
-                        ("店舗別売上", df_result_store),
-                        ("取引先別売上", df_result_vendor),
-                        ("品番別売上", df_result_item),
-                    ]
-
-                    for sheet_name, df_sheet in sheet_configs:
+                    # 全シートへのデザイン一括適用
+                    for sheet_name in writer.sheets.keys():
                         ws = writer.sheets[sheet_name]
 
                         # ヘッダー行装飾
-                        for col_num in range(1, len(df_sheet.columns) + 1):
+                        for col_num in range(1, ws.max_column + 1):
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
                             cell.alignment = Alignment(horizontal="center", vertical="center")
 
                         # データ行装飾
-                        for row_num in range(2, len(df_sheet) + 2):
-                            # 1列目 (コード類: 中央揃え, 文字列指定)
-                            c1 = ws.cell(row=row_num, column=1)
-                            c1.font = body_font
-                            c1.alignment = Alignment(horizontal="center")
-                            c1.number_format = "@"  # 文字列形式（0埋め保持用）
-                            c1.border = thin_border
+                        for row_num in range(2, ws.max_row + 1):
+                            for col_num in range(1, ws.max_column + 1):
+                                cell = ws.cell(row=row_num, column=col_num)
+                                cell.font = body_font
+                                cell.border = thin_border
 
-                            # 2列目 (名称: 左揃え)
-                            c2 = ws.cell(row=row_num, column=2)
-                            c2.font = body_font
-                            c2.alignment = Alignment(horizontal="left")
-                            c2.border = thin_border
-
-                            # 3列目 (売上高: 右揃え・3桁カンマ)
-                            c3 = ws.cell(row=row_num, column=3)
-                            c3.font = body_font
-                            c3.number_format = "#,##0"
-                            c3.alignment = Alignment(horizontal="right")
-                            c3.border = thin_border
+                                if sheet_name == "店舗別売上":
+                                    if col_num == 1:
+                                        cell.alignment = Alignment(horizontal="center")
+                                        cell.number_format = "@"
+                                    elif col_num == 2:
+                                        cell.alignment = Alignment(horizontal="left")
+                                    elif col_num == 3:
+                                        cell.alignment = Alignment(horizontal="right")
+                                        cell.number_format = "#,##0"
+                                else:
+                                    # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:品番, E:売上高)
+                                    if col_num in [1, 3, 4]:  # コード類（取引先コード, 店コード, 品番）
+                                        cell.alignment = Alignment(horizontal="center")
+                                        cell.number_format = "@"
+                                    elif col_num == 2:  # 取引先名
+                                        cell.alignment = Alignment(horizontal="left")
+                                    elif col_num == 5:  # 売上高
+                                        cell.alignment = Alignment(horizontal="right")
+                                        cell.number_format = "#,##0"
 
                         # 列幅自動調整
                         for col in ws.columns:
@@ -257,9 +285,9 @@ if uploaded_files:
                 col_dl, col_rst = st.columns([2, 1])
                 with col_dl:
                     st.download_button(
-                        label="📥 集計結果（3シート入りExcel）をダウンロード",
+                        label="📥 集集結果（取引先別シート入りExcel）をダウンロード",
                         data=output.getvalue(),
-                        file_name=f"店舗・取引先・品番別売上集計_{catalog_file.name}",
+                        file_name=f"店舗・取引先別売上集計_{catalog_file.name}",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
