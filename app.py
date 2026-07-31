@@ -139,16 +139,14 @@ if uploaded_files:
             with col1:
                 st.subheader("📋 店舗別売上高一覧")
                 st.dataframe(
-                    result_df.style.format(
-                        {"売上高（売単価×数量）": "¥{:,.0f}"}
-                    ),
+                    result_df.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
                     use_container_width=True,
                 )
 
             with col2:
                 st.subheader("📊 概況")
                 total_sales = result_df["売上高（売単価×数量）"].sum()
-                st.metric("データ合計 売上高", f"¥{int(total_sales):,}")
+                st.metric("データ合計 売上高", f"{int(total_sales):,}")
 
                 # ----------------------------------------------------
                 # 🎨 装飾付き Excelデータの生成 (openpyxl)
@@ -159,23 +157,19 @@ if uploaded_files:
                         writer, index=False, sheet_name="店舗別売上"
                     )
 
-                    # ワークシートの取得
                     ws = writer.sheets["店舗別売上"]
 
-                    # スタイル設定（フォント名・サイズ・書式など）
-                    FONT_NAME = "メイリオ"  # 👈 お好みのフォントに変更可能（例: "游ゴシック", "ＭＳ ゴシック"）
+                    FONT_NAME = "メイリオ"
 
                     header_font = Font(
                         name=FONT_NAME, size=11, bold=True, color="FFFFFF"
-                    )  # ヘッダー：白文字・太字
+                    )
                     header_fill = PatternFill(
                         start_color="4F81BD",
                         end_color="4F81BD",
                         fill_type="solid",
-                    )  # ヘッダー背景色：ブルー
-                    body_font = Font(
-                        name=FONT_NAME, size=10
-                    )  # 本文：通常のフォント
+                    )
+                    body_font = Font(name=FONT_NAME, size=10)
 
                     thin_border = Border(
                         left=Side(style="thin", color="D9D9D9"),
@@ -193,24 +187,24 @@ if uploaded_files:
                             horizontal="center", vertical="center"
                         )
 
-                    # データ行の装飾・カンマ区切りフォーマット
+                    # データ行の装飾・カンマ区切りフォーマット（※￥記号なし）
                     for row_num in range(2, len(result_df) + 2):
-                        # 店コード（中央揃え）
+                        # 店コード
                         c1 = ws.cell(row=row_num, column=1)
                         c1.font = body_font
                         c1.alignment = Alignment(horizontal="center")
                         c1.border = thin_border
 
-                        # 店舗名（左揃え）
+                        # 店舗名
                         c2 = ws.cell(row=row_num, column=2)
                         c2.font = body_font
                         c2.alignment = Alignment(horizontal="left")
                         c2.border = thin_border
 
-                        # 売上高（右揃え・通貨フォーマット ¥#,##0）
+                        # 売上高（3桁カンマ区切りのみ）
                         c3 = ws.cell(row=row_num, column=3)
                         c3.font = body_font
-                        c3.number_format = '"¥"#,##0'
+                        c3.number_format = "#,##0"
                         c3.alignment = Alignment(horizontal="right")
                         c3.border = thin_border
 
