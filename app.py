@@ -279,7 +279,7 @@ if uploaded_files:
                     # ① 店舗別集計シート
                     df_result_store.to_excel(writer, index=False, sheet_name="店舗別集計")
 
-                    # ② 取引先別シート
+                    # ② 各取引先別シートの構築
                     unique_vendors = df_detail_grouped[["vendor_code", "vendor_name"]].drop_duplicates()
                     for _, v_row in unique_vendors.iterrows():
                         v_code = v_row["vendor_code"]
@@ -291,8 +291,44 @@ if uploaded_files:
                         ].copy()
 
                         df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "item_code", "sales"]].copy()
-                        df_v_export.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
-                        df_v_export = df_v_export.sort_values(by=["店コード", "品番"]).reset_index(drop=True)
+                        df_v_export = df_v_export.sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
+
+                        v_total_sales = df_v_export["sales"].sum()
+
+                        # 000 全店合計行（2行目）の作成
+                        df_v_total_row = pd.DataFrame([{
+                            "vendor_code": None,
+                            "vendor_name": None,
+                            "store_code": "000",
+                            "item_code": None,
+                            "sales": v_total_sales
+                        }])
+
+                        df_v_full = pd.concat([df_v_total_row, df_v_export], ignore_index=True)
+
+                        # 構成比
+                        df_v_full["構成比"] = df_v_full["sales"] / v_total_sales if v_total_sales > 0 else 0.0
+
+                        # 協賛額 ＆ 端数調整
+                        if rate_val is not None:
+                            v_target_sponsor = round(v_total_sales * rate_val)
+                            v_store_sponsors = [round(amt * rate_val) for amt in df_v_export["sales"]]
+
+                            v_diff = v_target_sponsor - sum(v_store_sponsors)
+                            if v_diff != 0 and len(v_store_sponsors) > 0:
+                                max_v_idx = df_v_export["sales"].idxmax()
+                                v_store_sponsors[max_v_idx] += v_diff
+
+                            df_v_full["協賛額"] = [v_target_sponsor] + v_store_sponsors
+                            df_v_full["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_v_full))]
+                        else:
+                            df_v_full["協賛額"] = None
+                            df_v_full["協賛料率"] = None
+
+                        df_v_full.columns = [
+                            "取引先コード", "取引先名", "店コード", "品番",
+                            "売上高\n(売単価×数量)", "構成比", "協賛額", "協賛料率"
+                        ]
 
                         sheet_title = clean_sheet_name(v_name)
                         existing_sheets = writer.sheets.keys()
@@ -302,14 +338,14 @@ if uploaded_files:
                             sheet_title = clean_sheet_name(f"{base_title}_{counter}")
                             counter += 1
 
-                        df_v_export.to_excel(writer, index=False, sheet_name=sheet_title)
+                        df_v_full.to_excel(writer, index=False, sheet_name=sheet_title)
 
                     # ③ 「商品カタログ」原本シートのコピー追加
                     df_cat.to_excel(writer, index=False, header=False, sheet_name="商品カタログ")
 
                     # デザイン共通スタイルの定義
                     FONT_NAME = "メイリオ"
-                    header_font = Font(name=FONT_NAME, size=11, bold=True, color="FFFFFF")
+                    header_font = Font(name=FONT_NAME, size=10, bold=True, color="FFFFFF")
                     header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
                     body_font = Font(name=FONT_NAME, size=10)
                     total_font = Font(name=FONT_NAME, size=10, bold=True)
@@ -328,26 +364,28 @@ if uploaded_files:
                         bottom=Side(style="double", color="000000"),
                     )
 
-                    # 各集計シートへのデザイン適用
+                    # 各集計シートへのデザイン適用（フォント10ptメイリオ）
                     for sheet_name in writer.sheets.keys():
                         if sheet_name == "商品カタログ":
                             continue
 
                         ws = writer.sheets[sheet_name]
 
-                        # ヘッダー行装飾
+                        # ヘッダー行装飾 (1行目)
                         for col_num in range(1, ws.max_column + 1):
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
                             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-                        if sheet_name == "店舗別集計":
-                            for row_num in range(2, ws.max_row + 1):
-                                is_total_row = (row_num == 2)
-                                current_font = total_font if is_total_row else body_font
-                                current_border = total_bottom_border if is_total_row else thin_border
+                        # データ行装飾
+                        for row_num in range(2, ws.max_row + 1):
+                            is_total_row = (row_num == 2)  # 2行目が000 全店
+                            current_font = total_font if is_total_row else body_font
+                            current_border = total_bottom_border if is_total_row else thin_border
 
+                            if sheet_name == "店舗別集計":
+                                # A: 店コード, B: 店舗名, C: 売上高, D: 構成比, E: 協賛額, F: 協賛料率
                                 c1 = ws.cell(row=row_num, column=1)
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
@@ -391,26 +429,67 @@ if uploaded_files:
                                     c6.value = None
                                 c6.border = current_border
 
-                        else:
-                            for row_num in range(2, ws.max_row + 1):
-                                for col_num in range(1, ws.max_column + 1):
-                                    cell = ws.cell(row=row_num, column=col_num)
-                                    cell.font = body_font
-                                    cell.border = thin_border
+                            else:
+                                # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:品番, E:売上高, F:構成比, G:協賛額, H:協賛料率)
+                                c1 = ws.cell(row=row_num, column=1)  # 取引先コード
+                                c1.font = current_font
+                                c1.alignment = Alignment(horizontal="center")
+                                c1.number_format = "@"
+                                c1.border = current_border
 
-                                    if col_num in [1, 3, 4]:
-                                        cell.alignment = Alignment(horizontal="center")
-                                        cell.number_format = "@"
-                                    elif col_num == 2:
-                                        cell.alignment = Alignment(horizontal="left")
-                                    elif col_num == 5:
-                                        cell.alignment = Alignment(horizontal="right")
-                                        cell.number_format = "#,##0"
+                                c2 = ws.cell(row=row_num, column=2)  # 取引先名
+                                c2.font = current_font
+                                c2.alignment = Alignment(horizontal="left")
+                                c2.border = current_border
 
-                        # 列幅調整（店舗別集計シートはD列幅を10に固定調整）
+                                c3 = ws.cell(row=row_num, column=3)  # 店コード
+                                c3.font = current_font
+                                c3.alignment = Alignment(horizontal="center")
+                                c3.number_format = "@"
+                                c3.border = current_border
+
+                                c4 = ws.cell(row=row_num, column=4)  # 品番
+                                c4.font = current_font
+                                c4.alignment = Alignment(horizontal="center")
+                                c4.number_format = "@"
+                                c4.border = current_border
+
+                                c5 = ws.cell(row=row_num, column=5)  # 売上高
+                                c5.font = current_font
+                                c5.alignment = Alignment(horizontal="right")
+                                c5.number_format = "#,##0"
+                                c5.border = current_border
+
+                                c6 = ws.cell(row=row_num, column=6)  # 構成比
+                                c6.font = current_font
+                                c6.alignment = Alignment(horizontal="right")
+                                c6.number_format = "0.0%"
+                                if is_total_row:
+                                    c6.value = None
+                                c6.border = current_border
+
+                                c7 = ws.cell(row=row_num, column=7)  # 協賛額
+                                c7.font = current_font
+                                c7.alignment = Alignment(horizontal="right")
+                                if rate_val is not None:
+                                    c7.number_format = "#,##0"
+                                else:
+                                    c7.value = None
+                                c7.border = current_border
+
+                                c8 = ws.cell(row=row_num, column=8)  # 協賛料率
+                                c8.font = current_font
+                                c8.alignment = Alignment(horizontal="right")
+                                if is_total_row and rate_val is not None:
+                                    c8.number_format = "0%"
+                                else:
+                                    c8.value = None
+                                c8.border = current_border
+
+                        # 列幅調整
                         for col in ws.columns:
                             col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                            if sheet_name == "店舗別集計" and col_letter == "D":
+                            if (sheet_name == "店舗別集計" and col_letter == "D") or (sheet_name != "店舗別集計" and col_letter == "F"):
                                 ws.column_dimensions[col_letter].width = 10
                             else:
                                 max_len = 0
