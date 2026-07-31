@@ -6,6 +6,42 @@ import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="商品カタログ 店舗・取引先別売上集計", layout="wide")
+
+# Custom CSS: 立体的で目立つダウンロードボタンのスタイリング
+st.markdown("""
+<style>
+/* ダウンロードボタンの立体デザイン */
+div.stDownloadButton > button {
+    background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
+    color: #ffffff !important;
+    font-size: 18px !important;
+    font-weight: bold !important;
+    padding: 14px 28px !important;
+    border-radius: 8px !important;
+    border: none !important;
+    border-bottom: 4px solid #145222 !important;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.25) !important;
+    transition: all 0.15s ease-in-out !important;
+    width: 100% !important;
+}
+
+/* ホバー時の浮き上がり効果 */
+div.stDownloadButton > button:hover {
+    background: linear-gradient(180deg, #34ce57 0%, #218838 100%) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.3) !important;
+    color: #ffffff !important;
+}
+
+/* クリック時の押し込み効果 */
+div.stDownloadButton > button:active {
+    transform: translateY(2px) !important;
+    border-bottom: 1px solid #145222 !important;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("📊 商品カタログ 店舗・取引先別売上集計ツール")
 
 st.markdown("""
@@ -193,26 +229,18 @@ if uploaded_files:
 
                 rate_val = (sponsor_rate_input / 100.0) if sponsor_rate_input is not None else None
 
-                # ----------------------------------------------------
                 # 協賛額の端数四捨五入 ＆ 最多売上店舗での差額調整処理
-                # ----------------------------------------------------
                 if rate_val is not None:
-                    # 全店協賛額（E2セル）: 四捨五入
                     target_total_sponsor = round(total_sales_all * rate_val)
-
-                    # 各店舗（1行目以降）の初期四捨五入計算
                     store_sponsors = [round(amt * rate_val) for amt in df_stores_only["売上高（売単価×数量）"]]
 
-                    # 端数調整：各店舗の協賛額の合計と全店協賛額の差分を求める
                     current_sum = sum(store_sponsors)
                     diff = target_total_sponsor - current_sum
 
-                    # 売上が最も多い店舗（同率なら最初の店舗）に差分を加減算
                     if diff != 0 and len(store_sponsors) > 0:
                         max_idx = df_stores_only["売上高（売単価×数量）"].idxmax()
                         store_sponsors[max_idx] += diff
 
-                    # 000全店行の協賛額 + 各店舗の協賛額
                     df_result_store["協賛額"] = [target_total_sponsor] + store_sponsors
                     df_result_store["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_result_store))]
                 else:
