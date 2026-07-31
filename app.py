@@ -10,7 +10,6 @@ st.set_page_config(page_title="商品カタログ 店舗・取引先別売上集
 # Custom CSS: ダウンロードボタン＆リセットボタン共通の立体的・大文字デザイン
 st.markdown("""
 <style>
-/* ダウンロードボタン ＆ 通常ボタン（リセットボタン）共通立体デザイン */
 div.stDownloadButton > button, div.stButton > button {
     background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
     color: #ffffff !important;
@@ -25,7 +24,6 @@ div.stDownloadButton > button, div.stButton > button {
     width: 100% !important;
 }
 
-/* ホバー時の浮き上がり効果 */
 div.stDownloadButton > button:hover, div.stButton > button:hover {
     background: linear-gradient(180deg, #34ce57 0%, #218838 100%) !important;
     transform: translateY(-2px) !important;
@@ -33,7 +31,6 @@ div.stDownloadButton > button:hover, div.stButton > button:hover {
     color: #ffffff !important;
 }
 
-/* クリック時の押し込み効果 */
 div.stDownloadButton > button:active, div.stButton > button:active {
     transform: translateY(3px) !important;
     border-bottom: 2px solid #145222 !important;
@@ -210,35 +207,35 @@ if uploaded_files:
 
                 # 店舗別集計サマリーの構築（000 全店 + 各店舗）
                 store_list = [
-                    {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高（売単価×数量）": amt}
+                    {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高\n(売単価×数量)": amt}
                     for name, amt in store_totals.items()
                 ]
                 df_stores_only = pd.DataFrame(store_list).sort_values(by="店コード").reset_index(drop=True)
 
-                total_sales_all = df_stores_only["売上高（売単価×数量）"].sum()
+                total_sales_all = df_stores_only["売上高\n(売単価×数量)"].sum()
 
                 df_total_row = pd.DataFrame([{
                     "店コード": "000",
                     "店舗名": "全店",
-                    "売上高（売単価×数量）": total_sales_all
+                    "売上高\n(売単価×数量)": total_sales_all
                 }])
                 
                 df_result_store = pd.concat([df_total_row, df_stores_only], ignore_index=True)
 
-                df_result_store["構成比"] = df_result_store["売上高（売単価×数量）"] / total_sales_all if total_sales_all > 0 else 0.0
+                df_result_store["構成比"] = df_result_store["売上高\n(売単価×数量)"] / total_sales_all if total_sales_all > 0 else 0.0
 
                 rate_val = (sponsor_rate_input / 100.0) if sponsor_rate_input is not None else None
 
                 # 協賛額の端数四捨五入 ＆ 最多売上店舗での差額調整処理
                 if rate_val is not None:
                     target_total_sponsor = round(total_sales_all * rate_val)
-                    store_sponsors = [round(amt * rate_val) for amt in df_stores_only["売上高（売単価×数量）"]]
+                    store_sponsors = [round(amt * rate_val) for amt in df_stores_only["売上高\n(売単価×数量)"]]
 
                     current_sum = sum(store_sponsors)
                     diff = target_total_sponsor - current_sum
 
                     if diff != 0 and len(store_sponsors) > 0:
-                        max_idx = df_stores_only["売上高（売単価×数量）"].idxmax()
+                        max_idx = df_stores_only["売上高\n(売単価×数量)"].idxmax()
                         store_sponsors[max_idx] += diff
 
                     df_result_store["協賛額"] = [target_total_sponsor] + store_sponsors
@@ -254,7 +251,7 @@ if uploaded_files:
 
                 with tab1:
                     fmt_dict = {
-                        "売上高（売単価×数量）": "{:,.0f}",
+                        "売上高\n(売単価×数量)": "{:,.0f}",
                         "構成比": "{:.1%}"
                     }
                     if rate_val is not None:
@@ -343,7 +340,8 @@ if uploaded_files:
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
-                            cell.alignment = Alignment(horizontal="center", vertical="center")
+                            # 改行を許可して上下左右中央揃え
+                            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
                         if sheet_name == "店舗別集計":
                             for row_num in range(2, ws.max_row + 1):
@@ -410,11 +408,21 @@ if uploaded_files:
                                         cell.alignment = Alignment(horizontal="right")
                                         cell.number_format = "#,##0"
 
-                        # 列幅自動調整
+                        # 列幅自動調整（改行対応＆各列ぴったりフィット）
                         for col in ws.columns:
-                            max_len = max(len(str(cell.value or "")) for cell in col)
+                            max_len = 0
+                            for cell in col:
+                                val_str = str(cell.value or "")
+                                # 改行が含まれる場合は各行の最大長を取得
+                                lines = val_str.split("\n")
+                                for l in lines:
+                                    # 全角文字対応の簡易長さ計算
+                                    length = sum(2 if ord(c) > 256 else 1 for c in l)
+                                    if length > max_len:
+                                        max_len = length
+
                             col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                            ws.column_dimensions[col_letter].width = max(max_len + 5, 14)
+                            ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
                 # ダウンロード ＆ リセットボタンエリア
                 col_dl, col_rst = st.columns([1, 1])
