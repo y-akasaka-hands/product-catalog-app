@@ -146,11 +146,11 @@ if uploaded_files:
                 df_data = df_cat.iloc[13:].copy()
                 unit_prices = pd.to_numeric(df_data[unit_price_col_idx], errors="coerce").fillna(0)
 
-                # 4. 各店舗の「売上数」列の位置特定
+                # 4. 各店舗の「売上数」列の位置特定（※「全店」は除外する）
                 store_columns = []
                 for col_idx in range(len(row11)):
                     top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
-                    if top_val != "" and top_val not in ["品番", "枝番", "取引先"]:
+                    if top_val != "" and top_val not in ["品番", "枝番", "取引先", "全店"]:
                         for offset in range(3):
                             check_idx = col_idx + offset
                             if check_idx < len(row12):
@@ -340,7 +340,6 @@ if uploaded_files:
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
-                            # 改行を許可して上下左右中央揃え
                             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
                         if sheet_name == "店舗別集計":
@@ -408,15 +407,13 @@ if uploaded_files:
                                         cell.alignment = Alignment(horizontal="right")
                                         cell.number_format = "#,##0"
 
-                        # 列幅自動調整（改行対応＆各列ぴったりフィット）
+                        # 列幅自動調整
                         for col in ws.columns:
                             max_len = 0
                             for cell in col:
                                 val_str = str(cell.value or "")
-                                # 改行が含まれる場合は各行の最大長を取得
                                 lines = val_str.split("\n")
                                 for l in lines:
-                                    # 全角文字対応の簡易長さ計算
                                     length = sum(2 if ord(c) > 256 else 1 for c in l)
                                     if length > max_len:
                                         max_len = length
