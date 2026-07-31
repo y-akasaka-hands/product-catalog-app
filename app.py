@@ -36,77 +36,98 @@ if uploaded_files:
 
     if store_code_file and catalog_file:
         try:
-            # 1. 店コード表の読み込み
+            # 1. 店コード表の読み込み (B列:コード, C列:店舗名)
             df_store_raw = pd.read_excel(store_code_file, header=None)
             store_map = {}
             for idx, row in df_store_raw.iterrows():
                 if pd.notna(row[1]) and pd.notna(row[2]):
-                    code = str(int(row[1])).zfill(3) if str(row[1]).isdigit() else str(row[1]).zfill(3)
+                    # 3桁ゼロ埋め処理
+                    raw_code = str(row[1]).strip()
+                    if raw_code.replace('.0', '').isdigit():
+                        code = str(int(float(raw_code))).zfill(3)
+                    else:
+                        code = raw_code.zfill(3)
                     name = str(row[2]).strip()
                     store_map[name] = code
 
             # 2. 商品カタログの読み込み
             df_cat = pd.read_excel(catalog_file, header=None)
-            row11 = df_cat.iloc[11].values # 12行目
-            row12 = df_cat.iloc[12].values # 13行目
+            row11 = df_cat.iloc[11].values  # 12行目 (店舗名や上位カテゴリ)
+            row12 = df_cat.iloc[12].values  # 13行目 (売上数・売上高など)
 
-            # 列名のマッピング
-            current_group = ""
-            combined_cols = []
-            for g, c in zip(row11, row12):
-                if pd.notna(g) and str(g).strip() != "":
-                    current_group = str(g).strip()
-                c_str = "" if pd.isna(c) else str(c).strip()
+            # 3. 「売単価」列の位置を判定
+            unit_price_col_idx = -1
+            for idx, val in enumerate(row12):
+                if pd.notna(val) and str(val).strip() == "売単価":
+                    unit_price_col_idx = idx
+                    break
 
-                if current_group and c_str in ["売上数", "売上高", "在庫数"]:
-                    combined_cols.append(f"{current_group}_{c_str}")
-                else:
-                    combined_cols.append(c_str)
+            if unit_price_col_idx == -1:
+                st.error("❌ 商品カタログ内に「売単価」の列が見つかりませんでした。")
+                st.stop()
 
-            # 実データの抽出
-            df_clean = df_cat.iloc[13:].copy()
-            df_clean.columns = combined_cols
-            df_clean['売単価'] = pd.to_numeric(df_clean['売単価'], errors='coerce').fillna(0)
+            # 売単価のデータを数値に変換（14行目以降）
+            unit_prices = pd.to_numeric(df_cat.iloc[13:, unit_price_col_idx], errors='coerce').fillna(0)
 
-            # 店舗ごとの計算
+            # 4. 各店舗の「売上数」列の位置と店舗名を正確に特定
+            current_store = ""
+            store_columns = []  # (店舗名, 列インデックス) のリスト
+
+            for col_idx in range(len(row12)):
+                top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
+                sub_val = str(row12[col_idx]).strip() if pd.notna(row12[col_idx]) else ""
+
+                if top_val != "":
+                    current_store = top_val
+
+                # 除外対象（品番・枝番・取引先）以外の「売上数」列を抽出
+                if sub_val == "売上数" and current_store not in ["", "品番", "枝番", "取引先"]:
+                    store_columns.append((current_store, col_idx))
+
+            # 5. 店舗ごとに「売単価 × 売上数」を算出して合計
             store_results = []
-            for col in df_clean.columns:
-                if col.endswith('_売上数'):
-                    store_name = col.replace('_売上数', '')
-                    qty = pd.to_numeric(df_clean[col], errors='coerce').fillna(0)
-                    sales_amount = (qty * df_clean['売単価']).sum()
+            for store_name, col_idx in store_columns:
+                # 対象店舗の売上数を取得して数値化
+                qty_series = pd.to_numeric(df_cat.iloc[13:, col_idx], errors='coerce').fillna(0)
+                
+                # 売単価 × 数量 の合計
+                sales_amount = (qty_series * unit_prices).sum()
 
-                    code = store_map.get(store_name, "999")
-                    store_results.append({
-                        "店コード": code,
-                        "店舗名": store_name,
-                        "売上高（売単価×数量）": sales_amount
-                    })
+                # 店コードの取得（コード表にない場合は '999'）
+                code = store_map.get(store_name, "999")
 
+                store_results.append({
+                    "店コード": code,
+                    "店舗名": store_name,
+                    "売上高（売単価×数量）": sales_amount
+                })
+
+            # データフレームの作成・並び替え
             result_df = pd.DataFrame(store_results)
             result_df = result_df.sort_values(by="店コード").reset_index(drop=True)
 
-            # 結果の表示
+            # 6. 結果の表示
             st.success("✅ 集計が完了しました！")
-
+            
             col1, col2 = st.columns([2, 1])
             with col1:
                 st.subheader("📋 店舗別売上高一覧")
                 st.dataframe(
-                    result_df.style.format({"売上高（売単価×数量）": "¥{:,.0f}"}),
+                    result_df.style.format({"売上高（売単価×数量） ভূম": "¥{:,.0f}"}),
                     use_container_width=True
                 )
-
+            
             with col2:
                 st.subheader("📊 概況")
+                # 「全店」を除いた純粋な各店合計、または全体の合計を計算
                 total_sales = result_df["売上高（売単価×数量）"].sum()
-                st.metric("総合計 売上高", f"¥{int(total_sales):,}")
-
+                st.metric("データ合計 売上高", f"¥{int(total_sales):,}")
+                
                 # Excelダウンロード用データ生成
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                     result_df.to_excel(writer, index=False, sheet_name='店舗別売上')
-
+                
                 st.download_button(
                     label="📥 集計結果（Excel）をダウンロード",
                     data=output.getvalue(),
