@@ -193,9 +193,27 @@ if uploaded_files:
 
                 rate_val = (sponsor_rate_input / 100.0) if sponsor_rate_input is not None else None
 
+                # ----------------------------------------------------
+                # 協賛額の端数四捨五入 ＆ 最多売上店舗での差額調整処理
+                # ----------------------------------------------------
                 if rate_val is not None:
-                    total_sponsor = total_sales_all * rate_val
-                    df_result_store["協賛額"] = df_result_store["構成比"] * total_sponsor
+                    # 全店協賛額（E2セル）: 四捨五入
+                    target_total_sponsor = round(total_sales_all * rate_val)
+
+                    # 各店舗（1行目以降）の初期四捨五入計算
+                    store_sponsors = [round(amt * rate_val) for amt in df_stores_only["売上高（売単価×数量）"]]
+
+                    # 端数調整：各店舗の協賛額の合計と全店協賛額の差分を求める
+                    current_sum = sum(store_sponsors)
+                    diff = target_total_sponsor - current_sum
+
+                    # 売上が最も多い店舗（同率なら最初の店舗）に差分を加減算
+                    if diff != 0 and len(store_sponsors) > 0:
+                        max_idx = df_stores_only["売上高（売単価×数量）"].idxmax()
+                        store_sponsors[max_idx] += diff
+
+                    # 000全店行の協賛額 + 各店舗の協賛額
+                    df_result_store["協賛額"] = [target_total_sponsor] + store_sponsors
                     df_result_store["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_result_store))]
                 else:
                     df_result_store["協賛額"] = None
@@ -285,7 +303,7 @@ if uploaded_files:
                         bottom=Side(style="double", color="000000"),
                     )
 
-                    # 各集計シートへのデザイン適用（「商品カタログ」シートは除く）
+                    # 各集計シートへのデザイン適用
                     for sheet_name in writer.sheets.keys():
                         if sheet_name == "商品カタログ":
                             continue
