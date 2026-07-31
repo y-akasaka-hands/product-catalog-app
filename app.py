@@ -146,7 +146,7 @@ if uploaded_files:
                 df_data = df_cat.iloc[13:].copy()
                 unit_prices = pd.to_numeric(df_data[unit_price_col_idx], errors="coerce").fillna(0)
 
-                # 4. 各店舗の「売上数」列の位置特定（※「全店」は除外する）
+                # 4. 各店舗の「売上数」列の位置特定（※「全店」は除外）
                 store_columns = []
                 for col_idx in range(len(row11)):
                     top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
@@ -407,19 +407,21 @@ if uploaded_files:
                                         cell.alignment = Alignment(horizontal="right")
                                         cell.number_format = "#,##0"
 
-                        # 列幅自動調整
+                        # 列幅調整（店舗別集計シートはD列幅を10に固定調整）
                         for col in ws.columns:
-                            max_len = 0
-                            for cell in col:
-                                val_str = str(cell.value or "")
-                                lines = val_str.split("\n")
-                                for l in lines:
-                                    length = sum(2 if ord(c) > 256 else 1 for c in l)
-                                    if length > max_len:
-                                        max_len = length
-
                             col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                            ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+                            if sheet_name == "店舗別集計" and col_letter == "D":
+                                ws.column_dimensions[col_letter].width = 10
+                            else:
+                                max_len = 0
+                                for cell in col:
+                                    val_str = str(cell.value or "")
+                                    lines = val_str.split("\n")
+                                    for l in lines:
+                                        length = sum(2 if ord(c) > 256 else 1 for c in l)
+                                        if length > max_len:
+                                            max_len = length
+                                ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
 
                 # ダウンロード ＆ リセットボタンエリア
                 col_dl, col_rst = st.columns([1, 1])
