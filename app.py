@@ -1,4 +1,6 @@
 import io
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
 import streamlit as st
 
@@ -11,19 +13,20 @@ st.markdown("""
 2. 自動的に「売単価 × 売上数」で計算された店舗別売上高が集計されます。
 """)
 
+
 # リセット処理関数
 def reset_app():
-    # セッション状態をクリアして画面をリロード
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
 
+
 # ファイルアップローダー（複数ファイルの受け入れ）
 uploaded_files = st.file_uploader(
-    "「商品カタログ」と「店コード表」をアップロード（複数可）", 
-    type=["xlsx", "xls"], 
+    "「商品カタログ」と「店コード表」をアップロード（複数可）",
+    type=["xlsx", "xls"],
     accept_multiple_files=True,
-    key="file_uploader"
+    key="file_uploader",
 )
 
 if uploaded_files:
@@ -50,7 +53,7 @@ if uploaded_files:
             for idx, row in df_store_raw.iterrows():
                 if pd.notna(row[1]) and pd.notna(row[2]):
                     raw_code = str(row[1]).strip()
-                    if raw_code.replace('.0', '').isdigit():
+                    if raw_code.replace(".0", "").isdigit():
                         code = str(int(float(raw_code))).zfill(3)
                     else:
                         code = raw_code.zfill(3)
@@ -70,24 +73,40 @@ if uploaded_files:
                     break
 
             if unit_price_col_idx == -1:
-                st.error("❌ 商品カタログ内に「売単価」の列が見つかりませんでした。")
+                st.error(
+                    "❌"
+                    " 商品カタログ内に「売単価」の列が見つかりませんでした。"
+                )
                 st.stop()
 
             # 売単価のデータを数値に変換（14行目以降）
-            unit_prices = pd.to_numeric(df_cat.iloc[13:, unit_price_col_idx], errors='coerce').fillna(0)
+            unit_prices = pd.to_numeric(
+                df_cat.iloc[13:, unit_price_col_idx], errors="coerce"
+            ).fillna(0)
 
             # 4. 各店舗の「売上数」列の位置と店舗名を正確に特定
             store_columns = []
 
             for col_idx in range(len(row11)):
-                top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
-                
-                # 12行目に店舗名がしっかり入っている列のみ処理
-                if top_val != "" and top_val not in ["品番", "枝番", "取引先"]:
+                top_val = (
+                    str(row11[col_idx]).strip()
+                    if pd.notna(row11[col_idx])
+                    else ""
+                )
+
+                if top_val != "" and top_val not in [
+                    "品番",
+                    "枝番",
+                    "取引先",
+                ]:
                     for offset in range(3):
                         check_idx = col_idx + offset
                         if check_idx < len(row12):
-                            sub_val = str(row12[check_idx]).strip() if pd.notna(row12[check_idx]) else ""
+                            sub_val = (
+                                str(row12[check_idx]).strip()
+                                if pd.notna(row12[check_idx])
+                                else ""
+                            )
                             if sub_val == "売上数":
                                 store_columns.append((top_val, check_idx))
                                 break
@@ -95,57 +114,135 @@ if uploaded_files:
             # 5. 店舗ごとに「売単価 × 売上数」を算出して合計
             store_results = []
             for store_name, col_idx in store_columns:
-                qty_series = pd.to_numeric(df_cat.iloc[13:, col_idx], errors='coerce').fillna(0)
+                qty_series = pd.to_numeric(
+                    df_cat.iloc[13:, col_idx], errors="coerce"
+                ).fillna(0)
                 sales_amount = (qty_series * unit_prices).sum()
                 code = store_map.get(store_name, "999")
 
                 store_results.append({
                     "店コード": code,
                     "店舗名": store_name,
-                    "売上高（売単価×数量）": sales_amount
+                    "売上高（売単価×数量）": sales_amount,
                 })
 
             # データフレームの作成・並び替え
             result_df = pd.DataFrame(store_results)
-            result_df = result_df.sort_values(by="店コード").reset_index(drop=True)
+            result_df = result_df.sort_values(by="店コード").reset_index(
+                drop=True
+            )
 
             # 6. 結果の表示
             st.success("✅ 集計が完了しました！")
-            
+
             col1, col2 = st.columns([2, 1])
             with col1:
                 st.subheader("📋 店舗別売上高一覧")
                 st.dataframe(
-                    result_df.style.format({"売上高（売単価×数量）": "¥{:,.0f}"}),
-                    use_container_width=True
+                    result_df.style.format(
+                        {"売上高（売単価×数量）": "¥{:,.0f}"}
+                    ),
+                    use_container_width=True,
                 )
-            
+
             with col2:
                 st.subheader("📊 概況")
                 total_sales = result_df["売上高（売単価×数量）"].sum()
                 st.metric("データ合計 売上高", f"¥{int(total_sales):,}")
-                
-                # Excelダウンロード用データ生成
+
+                # ----------------------------------------------------
+                # 🎨 装飾付き Excelデータの生成 (openpyxl)
+                # ----------------------------------------------------
                 output = io.BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    result_df.to_excel(writer, index=False, sheet_name='店舗別売上')
-                
+                with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                    result_df.to_excel(
+                        writer, index=False, sheet_name="店舗別売上"
+                    )
+
+                    # ワークシートの取得
+                    ws = writer.sheets["店舗別売上"]
+
+                    # スタイル設定（フォント名・サイズ・書式など）
+                    FONT_NAME = "メイリオ"  # 👈 お好みのフォントに変更可能（例: "游ゴシック", "ＭＳ ゴシック"）
+
+                    header_font = Font(
+                        name=FONT_NAME, size=11, bold=True, color="FFFFFF"
+                    )  # ヘッダー：白文字・太字
+                    header_fill = PatternFill(
+                        start_color="4F81BD",
+                        end_color="4F81BD",
+                        fill_type="solid",
+                    )  # ヘッダー背景色：ブルー
+                    body_font = Font(
+                        name=FONT_NAME, size=10
+                    )  # 本文：通常のフォント
+
+                    thin_border = Border(
+                        left=Side(style="thin", color="D9D9D9"),
+                        right=Side(style="thin", color="D9D9D9"),
+                        top=Side(style="thin", color="D9D9D9"),
+                        bottom=Side(style="thin", color="D9D9D9"),
+                    )
+
+                    # ヘッダー行の装飾
+                    for col_num in range(1, len(result_df.columns) + 1):
+                        cell = ws.cell(row=1, column=col_num)
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = Alignment(
+                            horizontal="center", vertical="center"
+                        )
+
+                    # データ行の装飾・カンマ区切りフォーマット
+                    for row_num in range(2, len(result_df) + 2):
+                        # 店コード（中央揃え）
+                        c1 = ws.cell(row=row_num, column=1)
+                        c1.font = body_font
+                        c1.alignment = Alignment(horizontal="center")
+                        c1.border = thin_border
+
+                        # 店舗名（左揃え）
+                        c2 = ws.cell(row=row_num, column=2)
+                        c2.font = body_font
+                        c2.alignment = Alignment(horizontal="left")
+                        c2.border = thin_border
+
+                        # 売上高（右揃え・通貨フォーマット ¥#,##0）
+                        c3 = ws.cell(row=row_num, column=3)
+                        c3.font = body_font
+                        c3.number_format = '"¥"#,##0'
+                        c3.alignment = Alignment(horizontal="right")
+                        c3.border = thin_border
+
+                    # 列幅の自動調整
+                    for col in ws.columns:
+                        max_len = max(
+                            len(str(cell.value or "")) for cell in col
+                        )
+                        col_letter = openpyxl.utils.get_column_letter(
+                            col[0].column
+                        )
+                        ws.column_dimensions[col_letter].width = max(
+                            max_len + 4, 12
+                        )
+
+                # Excelダウンロードボタン
                 st.download_button(
                     label="📥 集計結果（Excel）をダウンロード",
                     data=output.getvalue(),
                     file_name=f"店舗別売上集計_{catalog_file.name}",
-                    mime="application/vnd.ms-excel",
-                    use_container_width=True
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
                 )
 
                 st.divider()
 
-                # 初期画面（クリア）に戻るボタン
+                # 初期画面に戻るボタン
                 st.button(
-                    "🔄 最初の画面に戻る（選択解除）", 
-                    on_click=reset_app, 
+                    "🔄 最初の画面に戻る（選択解除）",
+                    on_click=reset_app,
                     type="secondary",
-                    use_container_width=True
+                    use_container_width=True,
                 )
 
         except Exception as e:
