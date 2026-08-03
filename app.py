@@ -350,6 +350,9 @@ if uploaded_files:
                     body_font = Font(name=FONT_NAME, size=10)
                     total_font = Font(name=FONT_NAME, size=10, bold=True)
                     
+                    # 黄色ハイライト用のPatternFill定義
+                    yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+
                     thin_border = Border(
                         left=Side(style="thin", color="D9D9D9"),
                         right=Side(style="thin", color="D9D9D9"),
@@ -429,42 +432,41 @@ if uploaded_files:
                                 c6.border = current_border
 
                             else:
-                                # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:店舗名, E:品番, F:売上高, G:構成比, H:協賛額, I:協賛料率)
-                                c1 = ws.cell(row=row_num, column=1)  # 取引先コード
+                                c1 = ws.cell(row=row_num, column=1)
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
                                 c1.number_format = "@"
                                 c1.border = current_border
 
-                                c2 = ws.cell(row=row_num, column=2)  # 取引先名
+                                c2 = ws.cell(row=row_num, column=2)
                                 c2.font = current_font
                                 c2.alignment = Alignment(horizontal="left")
                                 c2.border = current_border
 
-                                c3 = ws.cell(row=row_num, column=3)  # 店コード
+                                c3 = ws.cell(row=row_num, column=3)
                                 c3.font = current_font
                                 c3.alignment = Alignment(horizontal="center")
                                 c3.number_format = "@"
                                 c3.border = current_border
 
-                                c4 = ws.cell(row=row_num, column=4)  # 店舗名
+                                c4 = ws.cell(row=row_num, column=4)
                                 c4.font = current_font
                                 c4.alignment = Alignment(horizontal="left")
                                 c4.border = current_border
 
-                                c5 = ws.cell(row=row_num, column=5)  # 品番
+                                c5 = ws.cell(row=row_num, column=5)
                                 c5.font = current_font
                                 c5.alignment = Alignment(horizontal="center")
                                 c5.number_format = "@"
                                 c5.border = current_border
 
-                                c6 = ws.cell(row=row_num, column=6)  # 売上高
+                                c6 = ws.cell(row=row_num, column=6)
                                 c6.font = current_font
                                 c6.alignment = Alignment(horizontal="right")
                                 c6.number_format = "#,##0"
                                 c6.border = current_border
 
-                                c7 = ws.cell(row=row_num, column=7)  # 構成比
+                                c7 = ws.cell(row=row_num, column=7)
                                 c7.font = current_font
                                 c7.alignment = Alignment(horizontal="right")
                                 c7.number_format = "0.0%"
@@ -472,7 +474,7 @@ if uploaded_files:
                                     c7.value = None
                                 c7.border = current_border
 
-                                c8 = ws.cell(row=row_num, column=8)  # 協賛額
+                                c8 = ws.cell(row=row_num, column=8)
                                 c8.font = current_font
                                 c8.alignment = Alignment(horizontal="right")
                                 if rate_val is not None:
@@ -481,7 +483,7 @@ if uploaded_files:
                                     c8.value = None
                                 c8.border = current_border
 
-                                c9 = ws.cell(row=row_num, column=9)  # 協賛料率
+                                c9 = ws.cell(row=row_num, column=9)
                                 c9.font = current_font
                                 c9.alignment = Alignment(horizontal="right")
                                 if is_total_row and rate_val is not None:
@@ -489,6 +491,14 @@ if uploaded_files:
                                 else:
                                     c9.value = None
                                 c9.border = current_border
+
+                        # ----------------------------------------------------
+                        # 🟡 協賛額の全店合計セルの黄色ハイライト指定
+                        # ----------------------------------------------------
+                        if sheet_name == "店舗別集計":
+                            ws.cell(row=2, column=5).fill = yellow_fill  # E2セル
+                        else:
+                            ws.cell(row=2, column=8).fill = yellow_fill  # H2セル
 
                         # 列幅調整
                         for col in ws.columns:
