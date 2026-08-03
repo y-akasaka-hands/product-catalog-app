@@ -55,7 +55,7 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
-# リセット処理関数（警告を出さないよう内部処理を修正）
+# リセット処理関数
 def reset_app():
     st.session_state.run_calc = False
     st.session_state.uploader_key += 1
@@ -199,10 +199,10 @@ if uploaded_files:
                 if records:
                     df_all_details = pd.concat(records, ignore_index=True)
                     df_detail_grouped = df_all_details.groupby(
-                        ["vendor_code", "vendor_name", "store_code", "item_code"], as_index=False
+                        ["vendor_code", "vendor_name", "store_code", "store_name", "item_code"], as_index=False
                     )["sales"].sum()
                 else:
-                    df_detail_grouped = pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "item_code", "sales"])
+                    df_detail_grouped = pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"])
 
                 # 店舗別集計サマリーの構築（000 全店 + 各店舗）
                 store_list = [
@@ -246,7 +246,7 @@ if uploaded_files:
                 # 6. 結果の表示
                 st.success("✅ 集計が完了しました！")
 
-                tab1, tab2 = st.tabs(["🏬 店舗別集計", "🏢 取引先別・店コード・品番別明細"])
+                tab1, tab2 = st.tabs(["🏬 店舗別集計", "🏢 取引先別・店コード・店舗名・品番別明細"])
 
                 with tab1:
                     fmt_dict = {
@@ -264,7 +264,7 @@ if uploaded_files:
 
                 with tab2:
                     df_preview = df_detail_grouped.copy()
-                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "品番", "売上高（売単価×数量）"]
+                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", "売上高（売単価×数量）"]
                     st.dataframe(
                         df_preview.style.format({"売上高（売単価×数量）": "{:,.0f}"}),
                         use_container_width=True,
@@ -289,7 +289,7 @@ if uploaded_files:
                             (df_detail_grouped["vendor_name"] == v_name)
                         ].copy()
 
-                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "item_code", "sales"]].copy()
+                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"]].copy()
                         df_v_export = df_v_export.sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
 
                         v_total_sales = df_v_export["sales"].sum()
@@ -299,6 +299,7 @@ if uploaded_files:
                             "vendor_code": None,
                             "vendor_name": None,
                             "store_code": "000",
+                            "store_name": "全店",
                             "item_code": None,
                             "sales": v_total_sales
                         }])
@@ -325,7 +326,7 @@ if uploaded_files:
                             df_v_full["協賛料率"] = None
 
                         df_v_full.columns = [
-                            "取引先コード", "取引先名", "店コード", "品番",
+                            "取引先コード", "取引先名", "店コード", "店舗名", "品番",
                             "売上高\n(売単価×数量)", "構成比", "協賛額", "協賛料率"
                         ]
 
@@ -428,65 +429,71 @@ if uploaded_files:
                                 c6.border = current_border
 
                             else:
-                                c1 = ws.cell(row=row_num, column=1)
+                                # 取引先別シート (A:取引先コード, B:取引先名, C:店コード, D:店舗名, E:品番, F:売上高, G:構成比, H:協賛額, I:協賛料率)
+                                c1 = ws.cell(row=row_num, column=1)  # 取引先コード
                                 c1.font = current_font
                                 c1.alignment = Alignment(horizontal="center")
                                 c1.number_format = "@"
                                 c1.border = current_border
 
-                                c2 = ws.cell(row=row_num, column=2)
+                                c2 = ws.cell(row=row_num, column=2)  # 取引先名
                                 c2.font = current_font
                                 c2.alignment = Alignment(horizontal="left")
                                 c2.border = current_border
 
-                                c3 = ws.cell(row=row_num, column=3)
+                                c3 = ws.cell(row=row_num, column=3)  # 店コード
                                 c3.font = current_font
                                 c3.alignment = Alignment(horizontal="center")
                                 c3.number_format = "@"
                                 c3.border = current_border
 
-                                c4 = ws.cell(row=row_num, column=4)
+                                c4 = ws.cell(row=row_num, column=4)  # 店舗名
                                 c4.font = current_font
-                                c4.alignment = Alignment(horizontal="center")
-                                c4.number_format = "@"
+                                c4.alignment = Alignment(horizontal="left")
                                 c4.border = current_border
 
-                                c5 = ws.cell(row=row_num, column=5)
+                                c5 = ws.cell(row=row_num, column=5)  # 品番
                                 c5.font = current_font
-                                c5.alignment = Alignment(horizontal="right")
-                                c5.number_format = "#,##0"
+                                c5.alignment = Alignment(horizontal="center")
+                                c5.number_format = "@"
                                 c5.border = current_border
 
-                                c6 = ws.cell(row=row_num, column=6)
+                                c6 = ws.cell(row=row_num, column=6)  # 売上高
                                 c6.font = current_font
                                 c6.alignment = Alignment(horizontal="right")
-                                c6.number_format = "0.0%"
-                                if is_total_row:
-                                    c6.value = None
+                                c6.number_format = "#,##0"
                                 c6.border = current_border
 
-                                c7 = ws.cell(row=row_num, column=7)
+                                c7 = ws.cell(row=row_num, column=7)  # 構成比
                                 c7.font = current_font
                                 c7.alignment = Alignment(horizontal="right")
-                                if rate_val is not None:
-                                    c7.number_format = "#,##0"
-                                else:
+                                c7.number_format = "0.0%"
+                                if is_total_row:
                                     c7.value = None
                                 c7.border = current_border
 
-                                c8 = ws.cell(row=row_num, column=8)
+                                c8 = ws.cell(row=row_num, column=8)  # 協賛額
                                 c8.font = current_font
                                 c8.alignment = Alignment(horizontal="right")
-                                if is_total_row and rate_val is not None:
-                                    c8.number_format = "0%"
+                                if rate_val is not None:
+                                    c8.number_format = "#,##0"
                                 else:
                                     c8.value = None
                                 c8.border = current_border
 
+                                c9 = ws.cell(row=row_num, column=9)  # 協賛料率
+                                c9.font = current_font
+                                c9.alignment = Alignment(horizontal="right")
+                                if is_total_row and rate_val is not None:
+                                    c9.number_format = "0%"
+                                else:
+                                    c9.value = None
+                                c9.border = current_border
+
                         # 列幅調整
                         for col in ws.columns:
                             col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                            if (sheet_name == "店舗別集計" and col_letter == "D") or (sheet_name != "店舗別集計" and col_letter == "F"):
+                            if (sheet_name == "店舗別集計" and col_letter == "D") or (sheet_name != "店舗別集計" and col_letter == "G"):
                                 ws.column_dimensions[col_letter].width = 10
                             else:
                                 max_len = 0
