@@ -55,10 +55,13 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
-# リセット処理関数
+# リセット処理関数（ファイル＆入力欄を完全初期化）
 def reset_app():
     st.session_state.run_calc = False
     st.session_state.uploader_key += 1
+    # 協賛料率のキーを消去して完全初期化
+    if f"sponsor_rate_{st.session_state.uploader_key-1}" in st.session_state:
+        del st.session_state[f"sponsor_rate_{st.session_state.uploader_key-1}"]
 
 
 # シート名修正関数
@@ -86,6 +89,7 @@ with col_rate:
         value=None,
         step=0.5,
         format="%.1f",
+        key=f"sponsor_rate_{st.session_state.uploader_key}",
         help="例: 10 と入力すると 10% として計算されます（空欄可）",
     )
 
@@ -350,7 +354,6 @@ if uploaded_files:
                     body_font = Font(name=FONT_NAME, size=10)
                     total_font = Font(name=FONT_NAME, size=10, bold=True)
                     
-                    # 黄色ハイライト用のPatternFill定義
                     yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 
                     thin_border = Border(
@@ -492,13 +495,11 @@ if uploaded_files:
                                     c9.value = None
                                 c9.border = current_border
 
-                        # ----------------------------------------------------
-                        # 🟡 協賛額の全店合計セルの黄色ハイライト指定
-                        # ----------------------------------------------------
+                        # 協賛額の全店合計セルの黄色ハイライト指定
                         if sheet_name == "店舗別集計":
-                            ws.cell(row=2, column=5).fill = yellow_fill  # E2セル
+                            ws.cell(row=2, column=5).fill = yellow_fill
                         else:
-                            ws.cell(row=2, column=8).fill = yellow_fill  # H2セル
+                            ws.cell(row=2, column=8).fill = yellow_fill
 
                         # 列幅調整
                         for col in ws.columns:
