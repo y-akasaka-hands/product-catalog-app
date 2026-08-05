@@ -55,11 +55,10 @@ if "uploader_key" not in st.session_state:
     st.session_state.uploader_key = 0
 
 
-# リセット処理関数（ファイル＆入力欄を完全初期化）
+# リセット処理関数
 def reset_app():
     st.session_state.run_calc = False
     st.session_state.uploader_key += 1
-    # 協賛料率のキーを消去して完全初期化
     if f"sponsor_rate_{st.session_state.uploader_key-1}" in st.session_state:
         del st.session_state[f"sponsor_rate_{st.session_state.uploader_key-1}"]
 
@@ -117,7 +116,9 @@ if uploaded_files:
 
         if st.session_state.run_calc:
             try:
-                # 1. 店コード表の読み込み (B列:コード, C列:店舗名)
+                # ----------------------------------------------------
+                # 1. 店コード表の自動解析・マッピング作成
+                # ----------------------------------------------------
                 df_store_raw = pd.read_excel(store_code_file, header=None)
                 store_map = {}
                 for idx, row in df_store_raw.iterrows():
@@ -130,48 +131,112 @@ if uploaded_files:
                         name = str(row[2]).strip()
                         store_map[name] = code
 
-                # 2. 商品カタログの読み込み
+                # ----------------------------------------------------
+                # 2. 商品カタログの自動解析（ヘッダー行の動的特定）
+                # ----------------------------------------------------
                 df_cat = pd.read_excel(catalog_file, header=None)
-                row11 = df_cat.iloc[11].values  # 12行目 (店舗名)
-                row12 = df_cat.iloc[12].values  # 13行目 (売上数・売単価など)
-
-                # 3. 「売単価」列の位置判定
-                unit_price_col_idx = -1
-                for idx, val in enumerate(row12):
-                    if pd.notna(val) and str(val).strip() == "売単価":
-                        unit_price_col_idx = idx
+                
+                header_row_idx = -1
+                for i in range(min(30, len(df_cat))):
+                    row_vals = [str(v).strip() for v in df_cat.iloc[i].values if pd.notna(v)]
+                    if "売単価" in row_vals or "原単価" in row_vals or "商品名称" in row_vals:
+                        header_row_idx = i
                         break
 
-                if unit_price_col_idx == -1:
-                    st.error("❌ 商品カタログ内に「売単価」の列が見つかりませんでした。")
+                if header_row_idx == -1:
+                    st.error("❌ エラー: 商品カタログ内に見出し行（「売単価」等の列）が見つかりませんでした。ファイル形式を確認してください。")
                     st.stop()
 
-                df_data = df_cat.iloc[13:].copy()
-                unit_prices = pd.to_numeric(df_data[unit_price_col_idx], errors="coerce").fillna(0)
+                # 店舗名行（通常はヘッダーの1行上）と詳細見出し行
+                store_name_row_idx = max(0, header_row_idx - 1)
+                row_store_names = df_cat.iloc[store_name_row_idx].values
+                row_headers = df_cat.iloc[header_row_idx].values
 
-                # 4. 各店舗の「売上数」列の位置特定（※「全店」は除外）
+                # ----------------------------------------------------
+                # 3. 必要なカラム列（品番・取引先・売単価）の動的特定
+                # ----------------------------------------------------
+                item_code_col = -1
+                vendor_code_col = -1
+                vendor_name_col = -1
+                unit_price_col = -1
+
+                for idx, h_val in enumerate(row_headers):
+                    if pd.isna(h_val):
+                        continue
+                    h_str = str(h_val).strip()
+
+                    # 売単価列の特定
+                    if h_str == "売単価" and unit_price_col == -1:
+                        unit_price_col = idx
+
+                    # 取引先名称列
+                    if h_str in ["取引先名称", "取引先名"] and vendor_name_col == -1:
+                        vendor_name_col = idx
+
+                    # 取引先コード列（「取引先」カテゴリ下の「コード」）
+                    top_h = str(row_store_names[idx]).strip() if pd.notna(row_store_names[idx]) else ""
+                    if "取引先" in top_h and h_str in ["ｺｰﾄﾞ", "コード"] and vendor_code_col == -1:
+                        vendor_code_col = idx
+
+                    # 品番コード列（「品番」カテゴリ下の「コード」）
+                    if "品番" in top_h and h_str in ["ｺｰﾄﾞ", "コード"] and item_code_col == -1:
+                        item_code_col = idx
+
+                # フォールバック（自動特定が漏れた場合のバックアップ）
+                if vendor_code_col == -1 and vendor_name_col != -1 and vendor_name_col > 0:
+                    vendor_code_col = vendor_name_col - 1
+                if item_code_col == -1:
+                    for idx, h_val in enumerate(row_headers):
+                        if str(h_val).strip() in ["品番", "品番ｺｰﾄﾞ", "品番コード"]:
+                            item_code_col = idx
+                            break
+
+                # カラムが見つからない場合のエラー出力
+                missing_cols = []
+                if unit_price_col == -1: missing_cols.append("売単価")
+                if vendor_code_col == -1: missing_cols.append("取引先コード")
+                if vendor_name_col == -1: missing_cols.append("取引先名称")
+                if item_code_col == -1: missing_cols.append("品番コード")
+
+                if missing_cols:
+                    st.error(f"❌ エラー: 商品カタログから以下の必要な列が特定できませんでした: {', '.join(missing_cols)}")
+                    st.stop()
+
+                # データ実効行（ヘッダーの次の行以降）
+                df_data = df_cat.iloc[header_row_idx + 1:].copy()
+                unit_prices = pd.to_numeric(df_data[unit_price_col], errors="coerce").fillna(0)
+
+                # ----------------------------------------------------
+                # 4. 店舗列の動的特定（「売上数」列を持つ店舗のみ抽出）
+                # ----------------------------------------------------
                 store_columns = []
-                for col_idx in range(len(row11)):
-                    top_val = str(row11[col_idx]).strip() if pd.notna(row11[col_idx]) else ""
+                for col_idx in range(len(row_store_names)):
+                    top_val = str(row_store_names[col_idx]).strip() if pd.notna(row_store_names[col_idx]) else ""
                     if top_val != "" and top_val not in ["品番", "枝番", "取引先", "全店"]:
                         for offset in range(3):
                             check_idx = col_idx + offset
-                            if check_idx < len(row12):
-                                sub_val = str(row12[check_idx]).strip() if pd.notna(row12[check_idx]) else ""
+                            if check_idx < len(row_headers):
+                                sub_val = str(row_headers[check_idx]).strip() if pd.notna(row_headers[check_idx]) else ""
                                 if sub_val == "売上数":
                                     store_columns.append((top_val, check_idx))
                                     break
 
+                if not store_columns:
+                    st.error("❌ エラー: 商品カタログ内に集計対象となる店舗（「売上数」列）が見つかりませんでした。")
+                    st.stop()
+
+                # ----------------------------------------------------
                 # 5. 明細データおよび店舗別売上の計算
-                df_data["vendor_code"] = df_data[8].apply(
+                # ----------------------------------------------------
+                df_data["vendor_code"] = df_data[vendor_code_col].apply(
                     lambda x: str(int(float(x))).zfill(7)
                     if pd.notna(x) and str(x).replace(".0", "").isdigit()
                     else str(x).strip().zfill(7)
                     if pd.notna(x)
                     else "0000000"
                 )
-                df_data["vendor_name"] = df_data[9].astype(str).str.strip()
-                df_data["item_code"] = df_data[2].apply(
+                df_data["vendor_name"] = df_data[vendor_name_col].astype(str).str.strip()
+                df_data["item_code"] = df_data[item_code_col].apply(
                     lambda x: str(int(float(x)))
                     if pd.notna(x) and str(x).replace(".0", "").isdigit()
                     else str(x).strip()
@@ -536,4 +601,4 @@ if uploaded_files:
                     )
 
             except Exception as e:
-                st.error(f"エラーが発生しました: {e}")
+                st.error(f"❌ 予期せぬエラーが発生しました: {e}")
