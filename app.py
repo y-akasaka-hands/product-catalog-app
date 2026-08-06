@@ -75,6 +75,18 @@ def mask_member_id(val):
     return s
 
 
+# JANコード13桁文字列化関数
+def format_jan_13digits(val):
+    if pd.isna(val):
+        return ""
+    s = str(val).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    if s.replace(".0", "").isdigit():
+        return str(int(float(s))).zfill(13)
+    return s.zfill(13)
+
+
 # モード選択
 calc_mode = st.radio(
     "集計パターンを選択してください：",
@@ -116,7 +128,6 @@ with col_opts:
         help="例: 10 と入力すると 10% として計算されます（空欄可）",
     )
 
-    # 共同販促モードのみ按分基準の選択肢を表示
     if "②" in calc_mode:
         apportion_base = st.selectbox(
             "補填額（協賛額）の按分基準：",
@@ -178,7 +189,6 @@ if uploaded_files:
                 row_store_names = df_cat.iloc[store_name_row_idx].values
                 row_headers = df_cat.iloc[header_row_idx].values
 
-                # カラム特定
                 item_code_col, vendor_code_col, vendor_name_col, unit_price_col, cost_price_col, jan_col = -1, -1, -1, -1, -1, -1
 
                 for idx, h_val in enumerate(row_headers):
@@ -255,26 +265,31 @@ if uploaded_files:
                             "store_code": store_code,
                             "store_name": store_name,
                             "item_code": df_cat_data["item_code"],
-                            "sales": sales_series
+                            "sales": sales_series,
+                            "gross_sales": sales_series
                         })
                         records.append(temp_df[temp_df["sales"] > 0])
 
                     df_all_details = pd.concat(records, ignore_index=True) if records else pd.DataFrame()
                     df_detail_grouped = df_all_details.groupby(
                         ["vendor_code", "vendor_name", "store_code", "store_name", "item_code"], as_index=False
-                    )["sales"].sum() if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"])
+                    ).agg({"sales": "sum", "gross_sales": "sum"}) if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales"])
 
                     store_list = [
-                        {"店コード": store_map.get(name, "999"), "店舗名": name, "売上高\n(売単価×数量)": amt}
+                        {
+                            "店コード": store_map.get(name, "999"),
+                            "店舗名": name,
+                            "HC会員売上\n(売単価×数量)": amt,
+                            "gross_sales": amt
+                        }
                         for name, amt in store_totals.items()
                     ]
-                    df_promo_export = None  # 原本コピー不要
+                    df_promo_export = None
 
                 # ====================================================
                 # モード②：共同販促集計（共同販促 ＋ カタログ）
                 # ====================================================
                 else:
-                    # 商品カタログマッピング (JAN -> 取引先コード, 取引先名, 品番, 原単価)
                     jan_map = {}
                     for _, row in df_cat_data.iterrows():
                         j_val = str(row[jan_col]).strip() if pd.notna(row[jan_col]) else ""
@@ -283,18 +298,19 @@ if uploaded_files:
                             v_code = str(int(float(row[vendor_code_col]))).zfill(7) if pd.notna(row[vendor_code_col]) and str(row[vendor_code_col]).replace('.0','').isdigit() else str(row[vendor_code_col]).strip().zfill(7) if pd.notna(row[vendor_code_col]) else "0000000"
                             v_name = str(row[vendor_name_col]).strip() if pd.notna(row[vendor_name_col]) else ""
                             i_code = str(int(float(row[item_code_col]))) if pd.notna(row[item_code_col]) and str(row[item_code_col]).replace('.0','').isdigit() else str(row[item_code_col]).strip() if pd.notna(row[item_code_col]) else ""
+                            u_price = float(row[unit_price_col]) if unit_price_col != -1 and pd.notna(row[unit_price_col]) else 0.0
                             c_price = float(row[cost_price_col]) if cost_price_col != -1 and pd.notna(row[cost_price_col]) else 0.0
                             jan_map[j_val] = {
                                 "vendor_code": v_code,
                                 "vendor_name": v_name,
                                 "item_code": i_code,
+                                "unit_price": u_price,
                                 "cost_price": c_price
                             }
 
                     df_prom_raw = pd.read_excel(promo_file)
                     df_prom = df_prom_raw.copy()
 
-                    # 列特定
                     master_price_col = next((c for c in df_prom.columns if "マスター単価" in str(c) or "単価" in str(c)), None)
                     qty_col = next((c for c in df_prom.columns if "数量" in str(c)), None)
                     store_code_col_prom = next((c for c in df_prom.columns if "店舗コード" in str(c) or "店コード" in str(c)), None)
@@ -308,27 +324,29 @@ if uploaded_files:
                         st.error("❌ エラー: 共同販促パターン内に必要な列（マスター単価・数量・店舗名・JAN）が見つかりませんでした。")
                         st.stop()
 
-                    # 店舗コード3桁整形
                     df_prom["store_code_clean"] = df_prom[store_code_col_prom].apply(
                         lambda x: str(int(float(x))).zfill(3) if pd.notna(x) and str(x).replace(".0","").isdigit() else str(x).strip().zfill(3) if pd.notna(x) else "999"
                     )
 
-                    # 除外店舗（052 名古屋店）のフィルタリング
+                    # 除外店舗（052 名古屋店）
                     df_prom_calc = df_prom[df_prom["store_code_clean"] != "052"].copy()
 
-                    # JAN文字列変換
                     df_prom_calc["jan_str"] = df_prom_calc[jan_col_prom].apply(
                         lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace(".0","").isdigit() else str(x).strip() if pd.notna(x) else ""
                     )
 
-                    # 売上高
+                    # HC会員売上 (マスター単価 × 数量)
                     df_prom_calc["sales"] = pd.to_numeric(df_prom_calc[master_price_col], errors="coerce").fillna(0) * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
+
+                    # 総売上 (カタログ売単価 × 数量)
+                    df_prom_calc["catalog_unit_price"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("unit_price", 0.0))
+                    df_prom_calc["gross_sales"] = df_prom_calc["catalog_unit_price"] * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
 
                     # 売上原価 (カタログ原単価 × 数量)
                     df_prom_calc["cost_price"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("cost_price", 0.0))
                     df_prom_calc["cost_total"] = df_prom_calc["cost_price"] * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
 
-                    # 付与ポイント（行ごとに端数切り捨て）
+                    # 付与ポイント（端数切り捨て）
                     if point_col_prom and point_col_prom in df_prom_calc.columns:
                         df_prom_calc["points_clean"] = df_prom_calc[point_col_prom].apply(
                             lambda x: math.floor(float(x)) if pd.notna(x) and not math.isnan(float(x)) else 0
@@ -338,7 +356,6 @@ if uploaded_files:
 
                     df_prom_calc["store_name"] = df_prom_calc[store_name_col_prom].astype(str).str.strip()
 
-                    # 取引先情報マッピング
                     df_prom_calc["vendor_code"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("vendor_code", "0000000"))
                     df_prom_calc["vendor_name"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("vendor_name", "不明"))
                     df_prom_calc["item_code"] = df_prom_calc.apply(
@@ -350,11 +367,12 @@ if uploaded_files:
                         ["vendor_code", "vendor_name", "store_code_clean", "store_name", "item_code"], as_index=False
                     ).agg({
                         "sales": "sum",
+                        "gross_sales": "sum",
                         "cost_total": "sum",
                         "points_clean": "sum"
                     }).rename(columns={"store_code_clean": "store_code"})
 
-                    # 按分基準の列を「apportion_val」として準備
+                    # 按分基準列
                     if apportion_base == "売上原価":
                         df_prom_calc["apportion_val"] = df_prom_calc["cost_total"]
                         df_detail_grouped["apportion_val"] = df_detail_grouped["cost_total"]
@@ -365,9 +383,10 @@ if uploaded_files:
                         df_prom_calc["apportion_val"] = df_prom_calc["sales"]
                         df_detail_grouped["apportion_val"] = df_detail_grouped["sales"]
 
-                    # 店舗別サマリー構築
+                    # 店舗別サマリー
                     store_summary = df_prom_calc.groupby(["store_code_clean", "store_name"], as_index=False).agg({
                         "sales": "sum",
+                        "gross_sales": "sum",
                         "apportion_val": "sum"
                     }).rename(columns={"store_code_clean": "store_code"})
 
@@ -375,39 +394,49 @@ if uploaded_files:
                         {
                             "店コード": r["store_code"],
                             "店舗名": r["store_name"],
-                            "売上高\n(売単価×数量)": r["sales"],
+                            "HC会員売上\n(売単価×数量)": r["sales"],
+                            "gross_sales": r["gross_sales"],
                             "apportion_val": r["apportion_val"]
                         }
                         for _, r in store_summary.iterrows()
                     ]
 
-                    # 共同販促パターン原本シート用の整形コピー（会員番号マスク・3桁店コード適用）
+                    # 共同販促パターン原本シートの整形（会員IDマスク・店コード3桁・13桁JAN化・指定列削除）
                     df_promo_export = df_prom_raw.copy()
                     if member_col_prom and member_col_prom in df_promo_export.columns:
                         df_promo_export[member_col_prom] = df_promo_export[member_col_prom].apply(mask_member_id)
                     if store_code_col_prom and store_code_col_prom in df_promo_export.columns:
                         df_promo_export[store_code_col_prom] = df_prom["store_code_clean"]
+                    if jan_col_prom and jan_col_prom in df_promo_export.columns:
+                        df_promo_export[jan_col_prom] = df_promo_export[jan_col_prom].apply(format_jan_13digits)
+
+                    # N列(ポイント率)・O列(ポイント計算基準額)の削除
+                    cols_to_drop = [c for c in df_promo_export.columns if "ポイント率" in str(c) or "ポイント計算基準額" in str(c)]
+                    if cols_to_drop:
+                        df_promo_export = df_promo_export.drop(columns=cols_to_drop)
 
                 # ====================================================
-                # 共通集計データフレーム作成＆端数調整（按分基準対応）
+                # 共通集計データフレーム作成＆端数調整
                 # ====================================================
                 df_stores_only = pd.DataFrame(store_list).sort_values(by="店コード").reset_index(drop=True)
-                total_sales_all = df_stores_only["売上高\n(売単価×数量)"].sum()
+                total_sales_all = df_stores_only["HC会員売上\n(売単価×数量)"].sum()
+                total_gross_all = df_stores_only["gross_sales"].sum()
 
                 if "apportion_val" not in df_stores_only.columns:
-                    df_stores_only["apportion_val"] = df_stores_only["売上高\n(売単価×数量)"]
+                    df_stores_only["apportion_val"] = df_stores_only["HC会員売上\n(売単価×数量)"]
 
                 total_apportion_all = df_stores_only["apportion_val"].sum()
 
                 df_total_row = pd.DataFrame([{
                     "店コード": "000",
                     "店舗名": "全店",
-                    "売上高\n(売単価×数量)": total_sales_all,
+                    "HC会員売上\n(売単価×数量)": total_sales_all,
+                    "gross_sales": total_gross_all,
                     "apportion_val": total_apportion_all
                 }])
                 df_result_store = pd.concat([df_total_row, df_stores_only], ignore_index=True)
 
-                # 構成比（選ばれた按分基準に基づく）
+                # 構成比
                 df_result_store["構成比"] = df_result_store["apportion_val"] / total_apportion_all if total_apportion_all > 0 else 0.0
 
                 if rate_val is not None:
@@ -424,24 +453,30 @@ if uploaded_files:
                     df_result_store["協賛額"] = None
                     df_result_store["協賛料率"] = None
 
-                # 不要になった計算列の削除
-                df_result_store = df_result_store.drop(columns=["apportion_val"])
+                # 列順設定（総売上を右端に配置）
+                df_result_store["総売上（売単価×数量）"] = df_result_store["gross_sales"]
+                df_result_store = df_result_store.drop(columns=["apportion_val", "gross_sales"])
+                df_result_store = df_result_store[["店コード", "店舗名", "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上（売単価×数量）"]]
 
                 # 画面表示
                 st.success(f"✅ 集計が完了しました！（按分基準: {apportion_base}）")
                 tab1, tab2 = st.tabs(["🏬 店舗別集計", "🏢 取引先別・店コード・店舗名・品番別明細"])
 
                 with tab1:
-                    fmt_dict = {"売上高\n(売単価×数量)": "{:,.0f}", "構成比": "{:.1%}"}
+                    fmt_dict = {
+                        "HC会員売上\n(売単価×数量)": "{:,.0f}",
+                        "構成比": "{:.1%}",
+                        "総売上（売単価×数量）": "{:,.0f}"
+                    }
                     if rate_val is not None:
                         fmt_dict["協賛額"] = "{:,.0f}"
                         fmt_dict["協賛料率"] = lambda x: f"{x:.0%}" if pd.notna(x) else ""
                     st.dataframe(df_result_store.style.format(fmt_dict, na_rep=""), use_container_width=True)
 
                 with tab2:
-                    df_preview = df_detail_grouped[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"]].copy()
-                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", "売上高（売単価×数量）"]
-                    st.dataframe(df_preview.style.format({"売上高（売単価×数量）": "{:,.0f}"}), use_container_width=True)
+                    df_preview = df_detail_grouped[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales"]].copy()
+                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", "HC会員売上（売単価×数量）", "総売上（売単価×数量）"]
+                    st.dataframe(df_preview.style.format({"HC会員売上（売単価×数量）": "{:,.0f}", "総売上（売単価×数量）": "{:,.0f}"}), use_container_width=True)
 
                 st.divider()
 
@@ -462,13 +497,15 @@ if uploaded_files:
                             (df_detail_grouped["vendor_code"] == v_code) & (df_detail_grouped["vendor_name"] == v_name)
                         ].copy()
 
-                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "apportion_val"]].sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
+                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales", "apportion_val"]].sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
                         v_total_sales = df_v_export["sales"].sum()
+                        v_total_gross = df_v_export["gross_sales"].sum()
                         v_total_apportion = df_v_export["apportion_val"].sum()
 
                         df_v_total_row = pd.DataFrame([{
                             "vendor_code": None, "vendor_name": None, "store_code": "000",
-                            "store_name": "全店", "item_code": None, "sales": v_total_sales, "apportion_val": v_total_apportion
+                            "store_name": "全店", "item_code": None, "sales": v_total_sales,
+                            "gross_sales": v_total_gross, "apportion_val": v_total_apportion
                         }])
 
                         df_v_full = pd.concat([df_v_total_row, df_v_export], ignore_index=True)
@@ -488,10 +525,11 @@ if uploaded_files:
                             df_v_full["協賛額"] = None
                             df_v_full["協賛料率"] = None
 
-                        df_v_full = df_v_full.drop(columns=["apportion_val"])
+                        df_v_full["総売上（売単価×数量）"] = df_v_full["gross_sales"]
+                        df_v_full = df_v_full.drop(columns=["apportion_val", "gross_sales"])
                         df_v_full.columns = [
                             "取引先コード", "取引先名", "店コード", "店舗名", "品番",
-                            "売上高\n(売単価×数量)", "構成比", "協賛額", "協賛料率"
+                            "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上（売単価×数量）"
                         ]
 
                         sheet_title = clean_sheet_name(v_name)
@@ -504,9 +542,9 @@ if uploaded_files:
 
                         df_v_full.to_excel(writer, index=False, sheet_name=sheet_title)
 
-                    # ③ 「共同販促パターン」原本シートコピー（モード②の場合）
+                    # ③ 「HC会員売上」原本シートコピー（モード②の場合）
                     if df_promo_export is not None:
-                        df_promo_export.to_excel(writer, index=False, sheet_name="共同販促パターン")
+                        df_promo_export.to_excel(writer, index=False, sheet_name="HC会員売上")
 
                     # ④ 「商品カタログ」原本シートのコピー
                     df_cat.to_excel(writer, index=False, header=False, sheet_name="商品カタログ")
@@ -523,22 +561,34 @@ if uploaded_files:
                     total_bottom_border = Border(left=Side(style="thin", color="D9D9D9"), right=Side(style="thin", color="D9D9D9"), top=Side(style="thin", color="D9D9D9"), bottom=Side(style="double", color="000000"))
 
                     for sheet_name in writer.sheets.keys():
-                        if sheet_name in ["商品カタログ", "共同販促パターン"]:
+                        if sheet_name in ["商品カタログ"]:
                             continue
+
                         ws = writer.sheets[sheet_name]
 
+                        # HC会員売上原本シートのJANコードテキストフォーマット指定
+                        if sheet_name == "HC会員売上":
+                            # janコード列（G列/7列目）をテキストに指定
+                            for r in range(2, ws.max_row + 1):
+                                cell_jan = ws.cell(row=r, column=7)
+                                cell_jan.number_format = "@"
+                            continue
+
+                        # ヘッダー行装飾
                         for col_num in range(1, ws.max_column + 1):
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
                             cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+                        # データ行装飾
                         for row_num in range(2, ws.max_row + 1):
                             is_total_row = (row_num == 2)
                             current_font = total_font if is_total_row else body_font
                             current_border = total_bottom_border if is_total_row else thin_border
 
                             if sheet_name == "店舗別集計":
+                                # Col 1: 店コード, 2: 店舗名, 3: HC会員売上, 4: 構成比, 5: 協賛額, 6: 協賛料率, 7: 総売上
                                 ws.cell(row=row_num, column=1).alignment = Alignment(horizontal="center")
                                 ws.cell(row=row_num, column=2).alignment = Alignment(horizontal="left")
                                 ws.cell(row=row_num, column=3).alignment = Alignment(horizontal="right")
@@ -557,20 +607,25 @@ if uploaded_files:
                                 if is_total_row and rate_val is not None: c6.number_format = "0%"
                                 else: c6.value = None
 
-                                for c in range(1, 7):
+                                c7 = ws.cell(row=row_num, column=7)
+                                c7.alignment = Alignment(horizontal="right")
+                                c7.number_format = "#,##0"
+
+                                for c in range(1, 8):
                                     cell = ws.cell(row=row_num, column=c)
                                     cell.font = current_font
                                     cell.border = current_border
                             else:
-                                for c in range(1, 10):
+                                # 取引先別シート: Col 1-5: コード類/名称, 6: HC会員売上, 7: 構成比, 8: 協賛額, 9: 協賛料率, 10: 総売上
+                                for c in range(1, 11):
                                     cell = ws.cell(row=row_num, column=c)
                                     cell.font = current_font
                                     cell.border = current_border
                                     if c in [1, 3, 5]: cell.alignment = Alignment(horizontal="center")
                                     elif c in [2, 4]: cell.alignment = Alignment(horizontal="left")
-                                    elif c in [6, 8]:
+                                    elif c in [6, 8, 10]:
                                         cell.alignment = Alignment(horizontal="right")
-                                        if c == 6: cell.number_format = "#,##0"
+                                        if c in [6, 10]: cell.number_format = "#,##0"
                                         elif c == 8 and rate_val is not None: cell.number_format = "#,##0"
                                         elif c == 8: cell.value = None
                                     elif c == 7:
@@ -582,11 +637,13 @@ if uploaded_files:
                                         if is_total_row and rate_val is not None: cell.number_format = "0%"
                                         else: cell.value = None
 
+                        # 黄色ハイライト
                         if sheet_name == "店舗別集計":
                             ws.cell(row=2, column=5).fill = yellow_fill
                         else:
                             ws.cell(row=2, column=8).fill = yellow_fill
 
+                        # 列幅自動調整
                         for col in ws.columns:
                             col_letter = openpyxl.utils.get_column_letter(col[0].column)
                             if (sheet_name == "店舗別集計" and col_letter == "D") or (sheet_name != "店舗別集計" and col_letter == "G"):
