@@ -10,40 +10,52 @@ import streamlit as st
 st.set_page_config(page_title="共同販促売上集計プログラム", layout="wide", page_icon="📊")
 
 # -----------------------------------------------------------------------------
-# カスタムCSS: グリーン系背景＆カード型UI、立体的グラデーションボタン
+# カスタムCSS: 濃いめのグリーン背景、高コントラスト＆くっきり枠線のカードUI
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* 全体の背景色をさわやかなライトグリーンに変更 */
+/* 全体の背景色をより濃くしっかりとしたグリーンに変更 */
 .stApp {
-    background-color: #f0f7f4 !important;
+    background-color: #d8ece3 !important;
 }
 
-/* カード型コンテナ装飾 */
-div[data-testid="stVerticalBlock"] > div.element-container > div.stMarkdown > div.custom-card {
-    background-color: #ffffff;
-    padding: 20px 24px;
-    border-radius: 12px;
-    border: 1px solid #c2e0d8;
-    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.05);
-    margin-bottom: 16px;
+/* ラジオボタンエリア（Step 1） */
+div[data-testid="stRadio"] {
+    background-color: #ffffff !important;
+    padding: 20px 24px !important;
+    border-radius: 12px !important;
+    border: 2px solid #2e7d32 !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* セクションの見出し装飾（グリーン系） */
+/* ファイルアップロード枠 (Step 2) */
+section[data-testid="stFileUploader"] {
+    background-color: #ffffff !important;
+    padding: 20px !important;
+    border-radius: 12px !important;
+    border: 2px solid #2e7d32 !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ナンバーインプット＆セレクトボックス枠 (Step 3) */
+div[data-testid="stNumberInput"], div[data-testid="stSelectbox"] {
+    background-color: #ffffff !important;
+    padding: 12px 16px !important;
+    border-radius: 10px !important;
+    border: 2px solid #2e7d32 !important;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.06) !important;
+    margin-bottom: 12px !important;
+}
+
+/* セクション見出しテキスト */
 h5 {
     color: #1b5e20 !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
+    font-size: 1.1rem !important;
+    margin-bottom: 10px !important;
 }
 
-/* ラジオボタンコンテナ */
-div[data-testid="stRadio"] > div {
-    background-color: #ffffff;
-    padding: 16px 20px;
-    border-radius: 10px;
-    border: 1px solid #a3d9c9;
-}
-
-/* 立体的でモダンなグラデーションボタンスタイル */
+/* 立体的なボタン */
 div.stDownloadButton > button, div.stButton > button {
     background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
     color: #ffffff !important;
@@ -53,7 +65,7 @@ div.stDownloadButton > button, div.stButton > button {
     border-radius: 8px !important;
     border: none !important;
     border-bottom: 4px solid #145222 !important;
-    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.15) !important;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.2) !important;
     transition: all 0.15s ease-in-out !important;
     width: 100% !important;
 }
@@ -61,14 +73,14 @@ div.stDownloadButton > button, div.stButton > button {
 div.stDownloadButton > button:hover, div.stButton > button:hover {
     background: linear-gradient(180deg, #34ce57 0%, #218838 100%) !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.2) !important;
+    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.25) !important;
     color: #ffffff !important;
 }
 
 div.stDownloadButton > button:active, div.stButton > button:active {
     transform: translateY(2px) !important;
     border-bottom: 2px solid #145222 !important;
-    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.15) !important;
 }
 </style>
 """, unsafe_allow_html=True)
