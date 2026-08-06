@@ -6,21 +6,48 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 import pandas as pd
 import streamlit as st
 
-st.set_page_config(page_title="売上集計ツール", layout="wide")
+# 画面全体のページ設定
+st.set_page_config(page_title="売上集計ツール", layout="wide", page_icon="📊")
 
-# Custom CSS: ボタン装飾
+# -----------------------------------------------------------------------------
+# カスタムCSS: カード型コンテナ、モダンなUI、立体的グラデーションボタン
+# -----------------------------------------------------------------------------
 st.markdown("""
 <style>
+/* 全体のフォント・背景調整 */
+.main {
+    background-color: #f8f9fa;
+}
+
+/* カード型コンテナ装飾 */
+div[data-testid="stVerticalBlock"] > div.element-container > div.stMarkdown > div.custom-card {
+    background-color: #ffffff;
+    padding: 20px 24px;
+    border-radius: 12px;
+    border: 1px solid #e9ecef;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    margin-bottom: 16px;
+}
+
+/* ラジオボタンコンテナ */
+div[data-testid="stRadio"] > div {
+    background-color: #ffffff;
+    padding: 16px 20px;
+    border-radius: 10px;
+    border: 1px solid #dee2e6;
+}
+
+/* 立体的でモダンなボタンスタイル */
 div.stDownloadButton > button, div.stButton > button {
     background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
     color: #ffffff !important;
-    font-size: 20px !important;
+    font-size: 18px !important;
     font-weight: 800 !important;
-    padding: 16px 28px !important;
+    padding: 14px 28px !important;
     border-radius: 8px !important;
     border: none !important;
-    border-bottom: 5px solid #145222 !important;
-    box-shadow: 0px 5px 10px rgba(0, 0, 0, 0.3) !important;
+    border-bottom: 4px solid #145222 !important;
+    box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.15) !important;
     transition: all 0.15s ease-in-out !important;
     width: 100% !important;
 }
@@ -28,19 +55,23 @@ div.stDownloadButton > button, div.stButton > button {
 div.stDownloadButton > button:hover, div.stButton > button:hover {
     background: linear-gradient(180deg, #34ce57 0%, #218838 100%) !important;
     transform: translateY(-2px) !important;
-    box-shadow: 0px 7px 14px rgba(0, 0, 0, 0.35) !important;
+    box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.2) !important;
     color: #ffffff !important;
 }
 
 div.stDownloadButton > button:active, div.stButton > button:active {
-    transform: translateY(3px) !important;
+    transform: translateY(2px) !important;
     border-bottom: 2px solid #145222 !important;
-    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.2) !important;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# -----------------------------------------------------------------------------
+# ヘッダーエリア
+# -----------------------------------------------------------------------------
 st.title("📊 売上集計ツール（店舗別・取引先別）")
+st.caption("商品カタログおよび共同販促パターンのデータから、店舗別・取引先別の集計表を自動生成します。")
 
 # セッション状態の初期化
 if "run_calc" not in st.session_state:
@@ -87,7 +118,10 @@ def format_jan_13digits(val):
     return s.zfill(13)
 
 
-# モード選択
+# -----------------------------------------------------------------------------
+# セクション1: 集計パターンの選択
+# -----------------------------------------------------------------------------
+st.markdown("##### 📌 Step 1: 集計パターンの選択")
 calc_mode = st.radio(
     "集計パターンを選択してください：",
     [
@@ -95,15 +129,19 @@ calc_mode = st.radio(
         "② 共同販促パターン ＋ 商品カタログ（共同販促集計）"
     ],
     horizontal=True,
+    label_visibility="collapsed",
     key=f"calc_mode_{st.session_state.uploader_key}"
 )
 
-st.markdown("---")
+st.markdown("<br>", unsafe_allow_html=True)
 
-# 入力エリアの構築
-col_file, col_opts = st.columns([3, 1])
+# -----------------------------------------------------------------------------
+# セクション2: ファイル選択 ＆ 条件設定（左右2カラム配置）
+# -----------------------------------------------------------------------------
+col_file, col_opts = st.columns([3, 2], gap="large")
 
 with col_file:
+    st.markdown("##### 📂 Step 2: ファイルのアップロード")
     if "①" in calc_mode:
         file_help = "「商品カタログ」と「⑩店コード表」の2つのファイルをドラッグ＆ドロップしてください。"
     else:
@@ -117,6 +155,8 @@ with col_file:
     )
 
 with col_opts:
+    st.markdown("##### ⚙️ Step 3: オプション設定")
+    
     sponsor_rate_input = st.number_input(
         "協賛料率（％）",
         min_value=0.0,
@@ -132,11 +172,29 @@ with col_opts:
         apportion_base = st.selectbox(
             "補填額（協賛額）の按分基準：",
             ["売上高", "売上原価", "付与ポイント"],
-            key=f"apportion_base_{st.session_state.uploader_key}"
+            key=f"apportion_base_{st.session_state.uploader_key}",
+            help="協賛額の各店舗への割り振り計算の基準を選択します。"
         )
     else:
         apportion_base = "売上高"
 
+st.markdown("<br>", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# 使い方ガイド（折りたたみ表示）
+# -----------------------------------------------------------------------------
+with st.expander("📖 詳しい使い方・仕様ガイドを見る"):
+    st.markdown("""
+    - **パターン①（通常集計）**: 商品カタログ内の店舗別売上数と単価を掛け合わせて集計します。別途「店コード表」が必要です。
+    - **パターン②（共同販促集計）**: 共同販促パターン内の購買実績から「HC会員売上」および「総売上」を集計します。
+      - **データ整形**: 会員番号は下4桁以外マスクされ、店コードは3桁化されます。
+      - **除外設定**: 店コード `052`（名古屋店）は集計から除外されます。
+      - **端数処理**: 付与ポイントは行ごとに小数点以下を切り捨てて合算します。
+    """)
+
+# ----------------------------------------------------
+# 処理実行ロジック
+# ----------------------------------------------------
 if uploaded_files:
     catalog_file = None
     store_code_file = None
@@ -169,9 +227,7 @@ if uploaded_files:
 
         if st.session_state.run_calc:
             try:
-                # ----------------------------------------------------
                 # 商品カタログの読み込みとヘッダー特定
-                # ----------------------------------------------------
                 df_cat = pd.read_excel(catalog_file, header=None)
 
                 header_row_idx = -1
@@ -335,18 +391,18 @@ if uploaded_files:
                         lambda x: str(int(float(x))) if pd.notna(x) and str(x).replace(".0","").isdigit() else str(x).strip() if pd.notna(x) else ""
                     )
 
-                    # HC会員売上 (マスター単価 × 数量)
+                    # 1. HC会員売上 (共同販促パターンの マスター単価 × 数量)
                     df_prom_calc["sales"] = pd.to_numeric(df_prom_calc[master_price_col], errors="coerce").fillna(0) * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
 
-                    # 総売上 (カタログ売単価 × 数量)
+                    # 2. 総売上 (商品カタログの 売単価 × 共同販促パターンの 数量)
                     df_prom_calc["catalog_unit_price"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("unit_price", 0.0))
                     df_prom_calc["gross_sales"] = df_prom_calc["catalog_unit_price"] * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
 
-                    # 売上原価 (カタログ原単価 × 数量)
+                    # 3. 売上原価 (商品カタログの 原単価 × 共同販促パターンの 数量)
                     df_prom_calc["cost_price"] = df_prom_calc["jan_str"].apply(lambda j: jan_map.get(j, {}).get("cost_price", 0.0))
                     df_prom_calc["cost_total"] = df_prom_calc["cost_price"] * pd.to_numeric(df_prom_calc[qty_col], errors="coerce").fillna(0)
 
-                    # 付与ポイント（端数切り捨て）
+                    # 4. 付与ポイント（端数切り捨て）
                     if point_col_prom and point_col_prom in df_prom_calc.columns:
                         df_prom_calc["points_clean"] = df_prom_calc[point_col_prom].apply(
                             lambda x: math.floor(float(x)) if pd.notna(x) and not math.isnan(float(x)) else 0
@@ -453,10 +509,10 @@ if uploaded_files:
                     df_result_store["協賛額"] = None
                     df_result_store["協賛料率"] = None
 
-                # 列順設定（総売上を右端に配置）
-                df_result_store["総売上（売単価×数量）"] = df_result_store["gross_sales"]
+                # 列順設定（総売上を改行表記にして右端に配置）
+                df_result_store["総売上\n(売単価×数量)"] = df_result_store["gross_sales"]
                 df_result_store = df_result_store.drop(columns=["apportion_val", "gross_sales"])
-                df_result_store = df_result_store[["店コード", "店舗名", "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上（売単価×数量）"]]
+                df_result_store = df_result_store[["店コード", "店舗名", "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"]]
 
                 # 画面表示
                 st.success(f"✅ 集計が完了しました！（按分基準: {apportion_base}）")
@@ -466,7 +522,7 @@ if uploaded_files:
                     fmt_dict = {
                         "HC会員売上\n(売単価×数量)": "{:,.0f}",
                         "構成比": "{:.1%}",
-                        "総売上（売単価×数量）": "{:,.0f}"
+                        "総売上\n(売単価×数量)": "{:,.0f}"
                     }
                     if rate_val is not None:
                         fmt_dict["協賛額"] = "{:,.0f}"
@@ -525,11 +581,11 @@ if uploaded_files:
                             df_v_full["協賛額"] = None
                             df_v_full["協賛料率"] = None
 
-                        df_v_full["総売上（売単価×数量）"] = df_v_full["gross_sales"]
+                        df_v_full["総売上\n(売単価×数量)"] = df_v_full["gross_sales"]
                         df_v_full = df_v_full.drop(columns=["apportion_val", "gross_sales"])
                         df_v_full.columns = [
                             "取引先コード", "取引先名", "店コード", "店舗名", "品番",
-                            "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上（売単価×数量）"
+                            "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"
                         ]
 
                         sheet_title = clean_sheet_name(v_name)
@@ -568,7 +624,6 @@ if uploaded_files:
 
                         # HC会員売上原本シートのJANコードテキストフォーマット指定
                         if sheet_name == "HC会員売上":
-                            # janコード列（G列/7列目）をテキストに指定
                             for r in range(2, ws.max_row + 1):
                                 cell_jan = ws.cell(row=r, column=7)
                                 cell_jan.number_format = "@"
