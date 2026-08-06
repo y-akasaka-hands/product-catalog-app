@@ -28,13 +28,19 @@ div[data-testid="stRadio"] {
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* ファイルアップロード枠 (Step 2) */
-section[data-testid="stFileUploader"] {
+/* ファイルアップロード領域（Step 2 外枠＆内部ドロップエリア） */
+div[data-testid="stFileUploader"] {
     background-color: #ffffff !important;
-    padding: 20px !important;
+    padding: 16px !important;
     border-radius: 12px !important;
     border: 2px solid #2e7d32 !important;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+div[data-testid="stFileUploaderDropzone"] {
+    background-color: #f8fff9 !important;
+    border: 2px dashed #2e7d32 !important;
+    border-radius: 8px !important;
 }
 
 /* ナンバーインプット＆セレクトボックス枠 (Step 3) */
