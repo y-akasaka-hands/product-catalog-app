@@ -150,7 +150,7 @@ calc_mode = st.radio(
     "集計パターンを選択してください：",
     [
         "① 商品カタログ ＋ 店コード表（通常集計）",
-        "② 共同販促パターン ＋ 商品カタログ（共同販促集計）"
+        "② 共同販促パターン ＋ 商品カタログ ＋ 店コード表（共同販促集計）"
     ],
     horizontal=True,
     label_visibility="collapsed",
@@ -169,7 +169,7 @@ with col_file:
     if "①" in calc_mode:
         file_help = "「商品カタログ」と「⑩店コード表」の2つのファイルをドラッグ＆ドロップしてください。"
     else:
-        file_help = "「共同販促パターン」と「商品カタログ」の2つのファイルをドラッグ＆ドロップしてください。"
+        file_help = "「共同販促パターン」「商品カタログ」「⑩店コード表」の3つのファイルを同時にドラッグ＆ドロップしてください。"
 
     uploaded_files = st.file_uploader(
         file_help,
@@ -209,10 +209,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -----------------------------------------------------------------------------
 with st.expander("📖 詳しい使い方・仕様ガイドを見る"):
     st.markdown("""
-    - **パターン①（通常集計）**: 商品カタログ内の店舗別売上数と単価を掛け合わせて集計します。別途「店コード表」が必要です。
-    - **パターン②（共同販促集計）**: 共同販促パターン内の購買実績から「HC会員売上」および「総売上」を集計します。
+    - **パターン①（通常集計）**: 商品カタログ内の店舗別売上数と単価を掛け合わせて集計します。「商品カタログ」「店コード表」の2ファイルが必要です。
+    - **パターン②（共同販促集計）**: 共同販促パターン内の購買実績から「HC会員売上」および「総売上」を集計します。「共同販促パターン」「商品カタログ」「店コード表」の3ファイルが必要です。
       - **データ整形**: 会員番号は下4桁以外マスクされ、店コードは3桁化されます。JANコードは13桁文字列にフォーマットされます。
       - **除外設定**: 店コード `052`（名古屋店）は集計から除外されます。
+      - **直営/FC区分**: 店コード表のE列に「FC」とある店舗はFC店、空欄の店舗は直営店として右側に集計表示されます。
       - **端数処理**: 付与ポイントは行ごとに小数点以下を切り捨てて合算します。
     """)
 
@@ -240,7 +241,8 @@ if uploaded_files:
     else:
         if not promo_file: st.warning("⚠️ 「共同販促パターン」ファイルが選択されていません。")
         if not catalog_file: st.warning("⚠️ 「商品カタログ」ファイルが選択されていません。")
-        if promo_file and catalog_file: ready_to_run = True
+        if not store_code_file: st.warning("⚠️ 「店コード表」ファイルが選択されていません。")
+        if promo_file and catalog_file and store_code_file: ready_to_run = True
 
     if ready_to_run:
         if not st.session_state.run_calc:
@@ -251,7 +253,29 @@ if uploaded_files:
 
         if st.session_state.run_calc:
             try:
+                # ----------------------------------------------------
+                # 店コード表の読み込み（B列:コード, C列:店舗名, E列:FC区分）
+                # ----------------------------------------------------
+                store_map = {}
+                fc_map = {}  # {store_code_or_name: "FC" or "直営"}
+                if store_code_file:
+                    df_store_raw = pd.read_excel(store_code_file, header=None)
+                    for idx, row in df_store_raw.iterrows():
+                        if pd.notna(row[1]) and pd.notna(row[2]):
+                            raw_code = str(row[1]).strip()
+                            code = str(int(float(raw_code))).zfill(3) if raw_code.replace(".0", "").isdigit() else raw_code.zfill(3)
+                            s_name = str(row[2]).strip()
+                            store_map[s_name] = code
+
+                            # E列 (col 4, index 4) の確認
+                            fc_val = str(row[4]).strip() if len(row) > 4 and pd.notna(row[4]) else ""
+                            is_fc = "FC" if "FC" in fc_val.upper() else "直営"
+                            fc_map[code] = is_fc
+                            fc_map[s_name] = is_fc
+
+                # ----------------------------------------------------
                 # 商品カタログの読み込みとヘッダー特定
+                # ----------------------------------------------------
                 df_cat = pd.read_excel(catalog_file, header=None)
 
                 header_row_idx = -1
@@ -300,14 +324,6 @@ if uploaded_files:
                 if "①" in calc_mode:
                     sales_col_header = "売上高\n(売単価×数量)"
                     sales_preview_header = "売上高（売単価×数量）"
-
-                    df_store_raw = pd.read_excel(store_code_file, header=None)
-                    store_map = {}
-                    for idx, row in df_store_raw.iterrows():
-                        if pd.notna(row[1]) and pd.notna(row[2]):
-                            raw_code = str(row[1]).strip()
-                            code = str(int(float(raw_code))).zfill(3) if raw_code.replace(".0", "").isdigit() else raw_code.zfill(3)
-                            store_map[str(row[2]).strip()] = code
 
                     unit_prices = pd.to_numeric(df_cat_data[unit_price_col], errors="coerce").fillna(0)
 
@@ -368,7 +384,7 @@ if uploaded_files:
                     df_promo_export = None
 
                 # ====================================================
-                # モード②：共同販促集計（共同販促 ＋ カタログ）
+                # モード②：共同販促集計（共同販促 ＋ カタログ ＋ 店コード表）
                 # ====================================================
                 else:
                     sales_col_header = "HC会員売上\n(売単価×数量)"
@@ -485,7 +501,7 @@ if uploaded_files:
                         for _, r in store_summary.iterrows()
                     ]
 
-                    # 共同販促パターン原本シートの整形（会員IDマスク・店コード3桁・13桁JAN化・指定列削除）
+                    # 共同販促パターン原本シートの整形
                     df_promo_export = df_prom_raw.copy()
                     if member_col_prom and member_col_prom in df_promo_export.columns:
                         df_promo_export[member_col_prom] = df_promo_export[member_col_prom].apply(mask_member_id)
@@ -494,7 +510,6 @@ if uploaded_files:
                     if jan_col_prom and jan_col_prom in df_promo_export.columns:
                         df_promo_export[jan_col_prom] = df_promo_export[jan_col_prom].apply(format_jan_13digits)
 
-                    # N列(ポイント率)・O列(ポイント計算基準額)の削除
                     cols_to_drop = [c for c in df_promo_export.columns if "ポイント率" in str(c) or "ポイント計算基準額" in str(c)]
                     if cols_to_drop:
                         df_promo_export = df_promo_export.drop(columns=cols_to_drop)
@@ -553,6 +568,23 @@ if uploaded_files:
                     df_result_store = df_result_store.drop(columns=["apportion_val"])
                     df_result_store = df_result_store[["店コード", "店舗名", sales_col_header, "構成比", "協賛額", "協賛料率"]]
 
+                # ----------------------------------------------------
+                # 🏢 直営店・FC店区分集計の算出
+                # ----------------------------------------------------
+                df_stores_only["fc_type"] = df_stores_only.apply(
+                    lambda r: fc_map.get(r["店コード"], fc_map.get(r["店舗名"], "直営")), axis=1
+                )
+                df_stores_only["sponsor_amt"] = store_sponsors if rate_val is not None else 0
+
+                chokuei_sales = df_stores_only[df_stores_only["fc_type"] == "直営"][sales_col_header].sum()
+                chokuei_sponsor = df_stores_only[df_stores_only["fc_type"] == "直営"]["sponsor_amt"].sum() if rate_val is not None else 0
+
+                fc_sales = df_stores_only[df_stores_only["fc_type"] == "FC"][sales_col_header].sum()
+                fc_sponsor = df_stores_only[df_stores_only["fc_type"] == "FC"]["sponsor_amt"].sum() if rate_val is not None else 0
+
+                total_type_sales = chokuei_sales + fc_sales
+                total_type_sponsor = chokuei_sponsor + fc_sponsor
+
                 # 画面表示
                 st.success(f"✅ 集計が完了しました！（按分基準: {apportion_base}）")
                 tab1, tab2 = st.tabs(["🏬 店舗別集計", "🏢 取引先別・店コード・店舗名・品番別明細"])
@@ -568,7 +600,22 @@ if uploaded_files:
                     if rate_val is not None:
                         fmt_dict["協賛額"] = "{:,.0f}"
                         fmt_dict["協賛料率"] = lambda x: f"{x:.0%}" if pd.notna(x) else ""
-                    st.dataframe(df_result_store.style.format(fmt_dict, na_rep=""), use_container_width=True)
+                    
+                    col_main, col_summary = st.columns([3, 1])
+                    with col_main:
+                        st.dataframe(df_result_store.style.format(fmt_dict, na_rep=""), use_container_width=True)
+                    
+                    with col_summary:
+                        st.markdown("##### 🏢 直営店・FC店 集計表")
+                        df_summary_show = pd.DataFrame([
+                            {"区分": "直営店", "売上高": chokuei_sales, "協賛額": chokuei_sponsor if rate_val is not None else None},
+                            {"区分": "FC店", "売上高": fc_sales, "協賛額": fc_sponsor if rate_val is not None else None},
+                            {"区分": "合計", "売上高": total_type_sales, "協賛額": total_type_sponsor if rate_val is not None else None}
+                        ])
+                        fmt_sum = {"売上高": "{:,.0f}"}
+                        if rate_val is not None:
+                            fmt_sum["協賛額"] = "{:,.0f}"
+                        st.dataframe(df_summary_show.style.format(fmt_sum, na_rep=""), use_container_width=True)
 
                 with tab2:
                     if "gross_sales" in df_detail_grouped.columns:
@@ -706,8 +753,60 @@ if uploaded_files:
                                 cell_jan.number_format = "@"
                             continue
 
+                        # ----------------------------------------------------
+                        # 店舗別集計シートへの「直営店・FC店集計表」のライト書き込み
+                        # ----------------------------------------------------
+                        if sheet_name == "店舗別集計":
+                            start_col = 9 if "②" in calc_mode else 8  # 右側に1列あける
+                            
+                            # ヘッダー書き込み
+                            headers_fc = ["区分", "売上高", "協賛額"]
+                            for idx, h_text in enumerate(headers_fc):
+                                c = ws.cell(row=1, column=start_col + idx, value=h_text)
+                                c.font = header_font
+                                c.fill = header_fill
+                                c.alignment = Alignment(horizontal="center", vertical="center")
+
+                            # データ行の書き込み
+                            fc_rows = [
+                                ("直営店", chokuei_sales, chokuei_sponsor if rate_val is not None else None),
+                                ("FC店", fc_sales, fc_sponsor if rate_val is not None else None),
+                                ("合計", total_type_sales, total_type_sponsor if rate_val is not None else None),
+                            ]
+
+                            for r_idx, (cat_label, val_sales, val_spons) in enumerate(fc_rows, start=2):
+                                is_tot = (cat_label == "合計")
+                                curr_f = total_font if is_tot else body_font
+                                curr_b = total_bottom_border if is_tot else thin_border
+
+                                # 区分
+                                c1 = ws.cell(row=r_idx, column=start_col, value=cat_label)
+                                c1.font = curr_f
+                                c1.border = curr_b
+                                c1.alignment = Alignment(horizontal="center")
+
+                                # 売上高
+                                c2 = ws.cell(row=r_idx, column=start_col + 1, value=val_sales)
+                                c2.font = curr_f
+                                c2.border = curr_b
+                                c2.alignment = Alignment(horizontal="right")
+                                c2.number_format = "#,##0"
+
+                                # 協賛額
+                                c3 = ws.cell(row=r_idx, column=start_col + 2, value=val_spons)
+                                c3.font = curr_f
+                                c3.border = curr_b
+                                c3.alignment = Alignment(horizontal="right")
+                                if rate_val is not None:
+                                    c3.number_format = "#,##0"
+                                else:
+                                    c3.value = None
+
                         # ヘッダー行装飾
                         for col_num in range(1, ws.max_column + 1):
+                            # 直営/FC集計表部分は設定済みのためスキップ
+                            if sheet_name == "店舗別集計" and col_num >= (9 if "②" in calc_mode else 8):
+                                continue
                             cell = ws.cell(row=1, column=col_num)
                             cell.font = header_font
                             cell.fill = header_fill
