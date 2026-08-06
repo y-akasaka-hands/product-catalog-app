@@ -7,16 +7,16 @@ import pandas as pd
 import streamlit as st
 
 # 画面全体のページ設定
-st.set_page_config(page_title="売上集計ツール", layout="wide", page_icon="📊")
+st.set_page_config(page_title="共同販促売上集計プログラム", layout="wide", page_icon="📊")
 
 # -----------------------------------------------------------------------------
-# カスタムCSS: カード型コンテナ、モダンなUI、立体的グラデーションボタン
+# カスタムCSS: グリーン系背景＆カード型UI、立体的グラデーションボタン
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-/* 全体のフォント・背景調整 */
-.main {
-    background-color: #f8f9fa;
+/* 全体の背景色をさわやかなライトグリーンに変更 */
+.stApp {
+    background-color: #f0f7f4 !important;
 }
 
 /* カード型コンテナ装飾 */
@@ -24,9 +24,15 @@ div[data-testid="stVerticalBlock"] > div.element-container > div.stMarkdown > di
     background-color: #ffffff;
     padding: 20px 24px;
     border-radius: 12px;
-    border: 1px solid #e9ecef;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    border: 1px solid #c2e0d8;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.05);
     margin-bottom: 16px;
+}
+
+/* セクションの見出し装飾（グリーン系） */
+h5 {
+    color: #1b5e20 !important;
+    font-weight: 700 !important;
 }
 
 /* ラジオボタンコンテナ */
@@ -34,10 +40,10 @@ div[data-testid="stRadio"] > div {
     background-color: #ffffff;
     padding: 16px 20px;
     border-radius: 10px;
-    border: 1px solid #dee2e6;
+    border: 1px solid #a3d9c9;
 }
 
-/* 立体的でモダンなボタンスタイル */
+/* 立体的でモダンなグラデーションボタンスタイル */
 div.stDownloadButton > button, div.stButton > button {
     background: linear-gradient(180deg, #28a745 0%, #1e7e34 100%) !important;
     color: #ffffff !important;
@@ -70,7 +76,7 @@ div.stDownloadButton > button:active, div.stButton > button:active {
 # -----------------------------------------------------------------------------
 # ヘッダーエリア
 # -----------------------------------------------------------------------------
-st.title("📊 売上集計ツール（店舗別・取引先別）")
+st.title("📊 共同販促売上集計プログラム（店舗別・取引先別）")
 st.caption("商品カタログおよび共同販促パターンのデータから、店舗別・取引先別の集計表を自動生成します。")
 
 # セッション状態の初期化
@@ -187,7 +193,7 @@ with st.expander("📖 詳しい使い方・仕様ガイドを見る"):
     st.markdown("""
     - **パターン①（通常集計）**: 商品カタログ内の店舗別売上数と単価を掛け合わせて集計します。別途「店コード表」が必要です。
     - **パターン②（共同販促集計）**: 共同販促パターン内の購買実績から「HC会員売上」および「総売上」を集計します。
-      - **データ整形**: 会員番号は下4桁以外マスクされ、店コードは3桁化されます。
+      - **データ整形**: 会員番号は下4桁以外マスクされ、店コードは3桁化されます。JANコードは13桁文字列にフォーマットされます。
       - **除外設定**: 店コード `052`（名古屋店）は集計から除外されます。
       - **端数処理**: 付与ポイントは行ごとに小数点以下を切り捨てて合算します。
     """)
