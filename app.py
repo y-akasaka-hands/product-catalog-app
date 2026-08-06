@@ -28,19 +28,13 @@ div[data-testid="stRadio"] {
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* ファイルアップロード領域（Step 2 外枠＆内部ドロップエリア） */
-div[data-testid="stFileUploader"] {
+/* ファイルアップロード枠 (Step 2) */
+section[data-testid="stFileUploader"] {
     background-color: #ffffff !important;
-    padding: 16px !important;
+    padding: 20px !important;
     border-radius: 12px !important;
     border: 2px solid #2e7d32 !important;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
-}
-
-div[data-testid="stFileUploaderDropzone"] {
-    background-color: #f8fff9 !important;
-    border: 2px dashed #2e7d32 !important;
-    border-radius: 8px !important;
 }
 
 /* ナンバーインプット＆セレクトボックス枠 (Step 3) */
@@ -346,21 +340,23 @@ if uploaded_files:
                             "store_name": store_name,
                             "item_code": df_cat_data["item_code"],
                             "sales": sales_series,
-                            "gross_sales": sales_series
+                            "gross_sales": sales_series,
+                            "apportion_val": sales_series
                         })
                         records.append(temp_df[temp_df["sales"] > 0])
 
                     df_all_details = pd.concat(records, ignore_index=True) if records else pd.DataFrame()
                     df_detail_grouped = df_all_details.groupby(
                         ["vendor_code", "vendor_name", "store_code", "store_name", "item_code"], as_index=False
-                    ).agg({"sales": "sum", "gross_sales": "sum"}) if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales"])
+                    ).agg({"sales": "sum", "gross_sales": "sum", "apportion_val": "sum"}) if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales", "apportion_val"])
 
                     store_list = [
                         {
                             "店コード": store_map.get(name, "999"),
                             "店舗名": name,
                             "HC会員売上\n(売単価×数量)": amt,
-                            "gross_sales": amt
+                            "gross_sales": amt,
+                            "apportion_val": amt
                         }
                         for name, amt in store_totals.items()
                     ]
