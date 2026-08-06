@@ -28,13 +28,19 @@ div[data-testid="stRadio"] {
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* ファイルアップロード枠 (Step 2) */
-section[data-testid="stFileUploader"] {
+/* ファイルアップロード領域（Step 2 外枠＆内部ドロップエリア） */
+div[data-testid="stFileUploader"] {
     background-color: #ffffff !important;
-    padding: 20px !important;
+    padding: 16px !important;
     border-radius: 12px !important;
     border: 2px solid #2e7d32 !important;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+}
+
+div[data-testid="stFileUploaderDropzone"] {
+    background-color: #f8fff9 !important;
+    border: 2px dashed #2e7d32 !important;
+    border-radius: 8px !important;
 }
 
 /* ナンバーインプット＆セレクトボックス枠 (Step 3) */
@@ -292,6 +298,9 @@ if uploaded_files:
                 # モード①：通常集計（カタログ ＋ 店コード表）
                 # ====================================================
                 if "①" in calc_mode:
+                    sales_col_header = "売上高\n(売単価×数量)"
+                    sales_preview_header = "売上高（売単価×数量）"
+
                     df_store_raw = pd.read_excel(store_code_file, header=None)
                     store_map = {}
                     for idx, row in df_store_raw.iterrows():
@@ -339,24 +348,20 @@ if uploaded_files:
                             "store_code": store_code,
                             "store_name": store_name,
                             "item_code": df_cat_data["item_code"],
-                            "sales": sales_series,
-                            "gross_sales": sales_series,
-                            "apportion_val": sales_series
+                            "sales": sales_series
                         })
                         records.append(temp_df[temp_df["sales"] > 0])
 
                     df_all_details = pd.concat(records, ignore_index=True) if records else pd.DataFrame()
                     df_detail_grouped = df_all_details.groupby(
                         ["vendor_code", "vendor_name", "store_code", "store_name", "item_code"], as_index=False
-                    ).agg({"sales": "sum", "gross_sales": "sum", "apportion_val": "sum"}) if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales", "apportion_val"])
+                    ).agg({"sales": "sum"}) if not df_all_details.empty else pd.DataFrame(columns=["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"])
 
                     store_list = [
                         {
                             "店コード": store_map.get(name, "999"),
                             "店舗名": name,
-                            "HC会員売上\n(売単価×数量)": amt,
-                            "gross_sales": amt,
-                            "apportion_val": amt
+                            sales_col_header: amt
                         }
                         for name, amt in store_totals.items()
                     ]
@@ -366,6 +371,9 @@ if uploaded_files:
                 # モード②：共同販促集計（共同販促 ＋ カタログ）
                 # ====================================================
                 else:
+                    sales_col_header = "HC会員売上\n(売単価×数量)"
+                    sales_preview_header = "HC会員売上（売単価×数量）"
+
                     jan_map = {}
                     for _, row in df_cat_data.iterrows():
                         j_val = str(row[jan_col]).strip() if pd.notna(row[jan_col]) else ""
@@ -470,7 +478,7 @@ if uploaded_files:
                         {
                             "店コード": r["store_code"],
                             "店舗名": r["store_name"],
-                            "HC会員売上\n(売単価×数量)": r["sales"],
+                            sales_col_header: r["sales"],
                             "gross_sales": r["gross_sales"],
                             "apportion_val": r["apportion_val"]
                         }
@@ -495,21 +503,28 @@ if uploaded_files:
                 # 共通集計データフレーム作成＆端数調整
                 # ====================================================
                 df_stores_only = pd.DataFrame(store_list).sort_values(by="店コード").reset_index(drop=True)
-                total_sales_all = df_stores_only["HC会員売上\n(売単価×数量)"].sum()
-                total_gross_all = df_stores_only["gross_sales"].sum()
+                total_sales_all = df_stores_only[sales_col_header].sum()
+
+                if "gross_sales" in df_stores_only.columns:
+                    total_gross_all = df_stores_only["gross_sales"].sum()
+                else:
+                    total_gross_all = None
 
                 if "apportion_val" not in df_stores_only.columns:
-                    df_stores_only["apportion_val"] = df_stores_only["HC会員売上\n(売単価×数量)"]
+                    df_stores_only["apportion_val"] = df_stores_only[sales_col_header]
 
                 total_apportion_all = df_stores_only["apportion_val"].sum()
 
-                df_total_row = pd.DataFrame([{
+                total_row_dict = {
                     "店コード": "000",
                     "店舗名": "全店",
-                    "HC会員売上\n(売単価×数量)": total_sales_all,
-                    "gross_sales": total_gross_all,
+                    sales_col_header: total_sales_all,
                     "apportion_val": total_apportion_all
-                }])
+                }
+                if total_gross_all is not None:
+                    total_row_dict["gross_sales"] = total_gross_all
+
+                df_total_row = pd.DataFrame([total_row_dict])
                 df_result_store = pd.concat([df_total_row, df_stores_only], ignore_index=True)
 
                 # 構成比
@@ -529,10 +544,14 @@ if uploaded_files:
                     df_result_store["協賛額"] = None
                     df_result_store["協賛料率"] = None
 
-                # 列順設定（総売上を改行表記にして右端に配置）
-                df_result_store["総売上\n(売単価×数量)"] = df_result_store["gross_sales"]
-                df_result_store = df_result_store.drop(columns=["apportion_val", "gross_sales"])
-                df_result_store = df_result_store[["店コード", "店舗名", "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"]]
+                # 列順設定
+                if "gross_sales" in df_result_store.columns:
+                    df_result_store["総売上\n(売単価×数量)"] = df_result_store["gross_sales"]
+                    df_result_store = df_result_store.drop(columns=["apportion_val", "gross_sales"])
+                    df_result_store = df_result_store[["店コード", "店舗名", sales_col_header, "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"]]
+                else:
+                    df_result_store = df_result_store.drop(columns=["apportion_val"])
+                    df_result_store = df_result_store[["店コード", "店舗名", sales_col_header, "構成比", "協賛額", "協賛料率"]]
 
                 # 画面表示
                 st.success(f"✅ 集計が完了しました！（按分基準: {apportion_base}）")
@@ -540,19 +559,26 @@ if uploaded_files:
 
                 with tab1:
                     fmt_dict = {
-                        "HC会員売上\n(売単価×数量)": "{:,.0f}",
-                        "構成比": "{:.1%}",
-                        "総売上\n(売単価×数量)": "{:,.0f}"
+                        sales_col_header: "{:,.0f}",
+                        "構成比": "{:.1%}"
                     }
+                    if "総売上\n(売単価×数量)" in df_result_store.columns:
+                        fmt_dict["総売上\n(売単価×数量)"] = "{:,.0f}"
+
                     if rate_val is not None:
                         fmt_dict["協賛額"] = "{:,.0f}"
                         fmt_dict["協賛料率"] = lambda x: f"{x:.0%}" if pd.notna(x) else ""
                     st.dataframe(df_result_store.style.format(fmt_dict, na_rep=""), use_container_width=True)
 
                 with tab2:
-                    df_preview = df_detail_grouped[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales"]].copy()
-                    df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", "HC会員売上（売単価×数量）", "総売上（売単価×数量）"]
-                    st.dataframe(df_preview.style.format({"HC会員売上（売単価×数量）": "{:,.0f}", "総売上（売単価×数量）": "{:,.0f}"}), use_container_width=True)
+                    if "gross_sales" in df_detail_grouped.columns:
+                        df_preview = df_detail_grouped[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales"]].copy()
+                        df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", sales_preview_header, "総売上（売単価×数量）"]
+                        st.dataframe(df_preview.style.format({sales_preview_header: "{:,.0f}", "総売上（売単価×数量）": "{:,.0f}"}), use_container_width=True)
+                    else:
+                        df_preview = df_detail_grouped[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"]].copy()
+                        df_preview.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", sales_preview_header]
+                        st.dataframe(df_preview.style.format({sales_preview_header: "{:,.0f}"}), use_container_width=True)
 
                 st.divider()
 
@@ -573,40 +599,71 @@ if uploaded_files:
                             (df_detail_grouped["vendor_code"] == v_code) & (df_detail_grouped["vendor_name"] == v_name)
                         ].copy()
 
-                        df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales", "apportion_val"]].sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
-                        v_total_sales = df_v_export["sales"].sum()
-                        v_total_gross = df_v_export["gross_sales"].sum()
-                        v_total_apportion = df_v_export["apportion_val"].sum()
+                        if "gross_sales" in df_v.columns:
+                            df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales", "gross_sales", "apportion_val"]].sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
+                            v_total_sales = df_v_export["sales"].sum()
+                            v_total_gross = df_v_export["gross_sales"].sum()
+                            v_total_apportion = df_v_export["apportion_val"].sum()
 
-                        df_v_total_row = pd.DataFrame([{
-                            "vendor_code": None, "vendor_name": None, "store_code": "000",
-                            "store_name": "全店", "item_code": None, "sales": v_total_sales,
-                            "gross_sales": v_total_gross, "apportion_val": v_total_apportion
-                        }])
+                            df_v_total_row = pd.DataFrame([{
+                                "vendor_code": None, "vendor_name": None, "store_code": "000",
+                                "store_name": "全店", "item_code": None, "sales": v_total_sales,
+                                "gross_sales": v_total_gross, "apportion_val": v_total_apportion
+                            }])
 
-                        df_v_full = pd.concat([df_v_total_row, df_v_export], ignore_index=True)
-                        df_v_full["構成比"] = df_v_full["apportion_val"] / v_total_apportion if v_total_apportion > 0 else 0.0
+                            df_v_full = pd.concat([df_v_total_row, df_v_export], ignore_index=True)
+                            df_v_full["構成比"] = df_v_full["apportion_val"] / v_total_apportion if v_total_apportion > 0 else 0.0
 
-                        if rate_val is not None:
-                            v_target_sponsor = round(v_total_apportion * rate_val)
-                            v_store_sponsors = [round(amt * rate_val) for amt in df_v_export["apportion_val"]]
-                            v_diff = v_target_sponsor - sum(v_store_sponsors)
-                            if v_diff != 0 and len(v_store_sponsors) > 0:
-                                max_v_idx = df_v_export["apportion_val"].idxmax()
-                                v_store_sponsors[max_v_idx] += v_diff
+                            if rate_val is not None:
+                                v_target_sponsor = round(v_total_apportion * rate_val)
+                                v_store_sponsors = [round(amt * rate_val) for amt in df_v_export["apportion_val"]]
+                                v_diff = v_target_sponsor - sum(v_store_sponsors)
+                                if v_diff != 0 and len(v_store_sponsors) > 0:
+                                    max_v_idx = df_v_export["apportion_val"].idxmax()
+                                    v_store_sponsors[max_v_idx] += v_diff
 
-                            df_v_full["協賛額"] = [v_target_sponsor] + v_store_sponsors
-                            df_v_full["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_v_full))]
+                                df_v_full["協賛額"] = [v_target_sponsor] + v_store_sponsors
+                                df_v_full["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_v_full))]
+                            else:
+                                df_v_full["協賛額"] = None
+                                df_v_full["協賛料率"] = None
+
+                            df_v_full["総売上\n(売単価×数量)"] = df_v_full["gross_sales"]
+                            df_v_full = df_v_full.drop(columns=["apportion_val", "gross_sales"])
+                            df_v_full.columns = [
+                                "取引先コード", "取引先名", "店コード", "店舗名", "品番",
+                                sales_col_header, "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"
+                            ]
                         else:
-                            df_v_full["協賛額"] = None
-                            df_v_full["協賛料率"] = None
+                            df_v_export = df_v[["vendor_code", "vendor_name", "store_code", "store_name", "item_code", "sales"]].sort_values(by=["store_code", "item_code"]).reset_index(drop=True)
+                            v_total_sales = df_v_export["sales"].sum()
 
-                        df_v_full["総売上\n(売単価×数量)"] = df_v_full["gross_sales"]
-                        df_v_full = df_v_full.drop(columns=["apportion_val", "gross_sales"])
-                        df_v_full.columns = [
-                            "取引先コード", "取引先名", "店コード", "店舗名", "品番",
-                            "HC会員売上\n(売単価×数量)", "構成比", "協賛額", "協賛料率", "総売上\n(売単価×数量)"
-                        ]
+                            df_v_total_row = pd.DataFrame([{
+                                "vendor_code": None, "vendor_name": None, "store_code": "000",
+                                "store_name": "全店", "item_code": None, "sales": v_total_sales
+                            }])
+
+                            df_v_full = pd.concat([df_v_total_row, df_v_export], ignore_index=True)
+                            df_v_full["構成比"] = df_v_full["sales"] / v_total_sales if v_total_sales > 0 else 0.0
+
+                            if rate_val is not None:
+                                v_target_sponsor = round(v_total_sales * rate_val)
+                                v_store_sponsors = [round(amt * rate_val) for amt in df_v_export["sales"]]
+                                v_diff = v_target_sponsor - sum(v_store_sponsors)
+                                if v_diff != 0 and len(v_store_sponsors) > 0:
+                                    max_v_idx = df_v_export["sales"].idxmax()
+                                    v_store_sponsors[max_v_idx] += v_diff
+
+                                df_v_full["協賛額"] = [v_target_sponsor] + v_store_sponsors
+                                df_v_full["協賛料率"] = [rate_val if i == 0 else None for i in range(len(df_v_full))]
+                            else:
+                                df_v_full["協賛額"] = None
+                                df_v_full["協賛料率"] = None
+
+                            df_v_full.columns = [
+                                "取引先コード", "取引先名", "店コード", "店舗名", "品番",
+                                sales_col_header, "構成比", "協賛額", "協賛料率"
+                            ]
 
                         sheet_title = clean_sheet_name(v_name)
                         existing_sheets = writer.sheets.keys()
@@ -663,7 +720,6 @@ if uploaded_files:
                             current_border = total_bottom_border if is_total_row else thin_border
 
                             if sheet_name == "店舗別集計":
-                                # Col 1: 店コード, 2: 店舗名, 3: HC会員売上, 4: 構成比, 5: 協賛額, 6: 協賛料率, 7: 総売上
                                 ws.cell(row=row_num, column=1).alignment = Alignment(horizontal="center")
                                 ws.cell(row=row_num, column=2).alignment = Alignment(horizontal="left")
                                 ws.cell(row=row_num, column=3).alignment = Alignment(horizontal="right")
@@ -682,17 +738,19 @@ if uploaded_files:
                                 if is_total_row and rate_val is not None: c6.number_format = "0%"
                                 else: c6.value = None
 
-                                c7 = ws.cell(row=row_num, column=7)
-                                c7.alignment = Alignment(horizontal="right")
-                                c7.number_format = "#,##0"
+                                max_col_idx = 7 if "②" in calc_mode else 6
+                                if max_col_idx == 7:
+                                    c7 = ws.cell(row=row_num, column=7)
+                                    c7.alignment = Alignment(horizontal="right")
+                                    c7.number_format = "#,##0"
 
-                                for c in range(1, 8):
+                                for c in range(1, max_col_idx + 1):
                                     cell = ws.cell(row=row_num, column=c)
                                     cell.font = current_font
                                     cell.border = current_border
                             else:
-                                # 取引先別シート: Col 1-5: コード類/名称, 6: HC会員売上, 7: 構成比, 8: 協賛額, 9: 協賛料率, 10: 総売上
-                                for c in range(1, 11):
+                                max_col_idx = 10 if "②" in calc_mode else 9
+                                for c in range(1, max_col_idx + 1):
                                     cell = ws.cell(row=row_num, column=c)
                                     cell.font = current_font
                                     cell.border = current_border
