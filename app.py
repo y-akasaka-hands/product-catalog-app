@@ -537,8 +537,12 @@ if uploaded_files:
                     df_pos_calc["store_name"] = df_pos_calc["store_code_clean"].apply(lambda c: next((k for k, v in store_map.items() if v == c), f"店舗{c}"))
 
                     if pos_sub_mode == "バンドル集計":
-                        sales_col_header = "値引後売価\n(売単価×数量)"
-                        sales_preview_header = "値引後売価（売単価×数量）"
+                        if apportion_base == "値引前売価":
+                            sales_col_header = "値引前売価\n(マスタ売単価×数量)"
+                            sales_preview_header = "値引前売価（マスタ売単価×数量）"
+                        else:
+                            sales_col_header = "値引後売価\n(売単価×数量)"
+                            sales_preview_header = "値引後売価（売単価×数量）"
 
                         df_pos_sub = df_pos_calc[df_pos_calc["明細値引有無"].astype(str).str.strip() == "0"].copy()
                         df_pos_sub["discount_rate"] = df_pos_sub.apply(
@@ -553,7 +557,11 @@ if uploaded_files:
                         df_pos_sub["final_unit_price"] = df_pos_sub.apply(calc_bundle_price, axis=1)
                         df_pos_sub["price_before_discount"] = df_pos_sub["master_price"] * df_pos_sub["qty"]
                         df_pos_sub["price_after_discount"] = df_pos_sub["final_unit_price"] * df_pos_sub["qty"]
-                        df_pos_sub["sales"] = df_pos_sub["price_after_discount"]
+
+                        if apportion_base == "値引前売価":
+                            df_pos_sub["sales"] = df_pos_sub["price_before_discount"]
+                        else:
+                            df_pos_sub["sales"] = df_pos_sub["price_after_discount"]
 
                         df_detail_grouped = df_pos_sub.groupby(
                             ["vendor_code", "vendor_name", "store_code_clean", "store_name", "item_code"], as_index=False
@@ -590,7 +598,7 @@ if uploaded_files:
                         elif apportion_base == "付与ポイント": df_detail_grouped["apportion_val"] = df_detail_grouped["points_clean"]
                         else: df_detail_grouped["apportion_val"] = df_detail_grouped["sales"]
 
-                    # POS原本フィルタリングエクスポートデータ作成（重複ヘッダーを防止）
+                    # POS原本フィルタリングエクスポートデータ作成
                     keep_cols = [1, 23, 24, 48, 50, 51, 52, 53, 55, 56, 57, 58]
                     df_pos_export_raw = df_pos_raw.iloc[6:].copy().reset_index(drop=True)
                     df_pos_export = df_pos_export_raw.iloc[:, keep_cols].copy()
@@ -705,7 +713,7 @@ if uploaded_files:
                         df_v_export_detail.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", sales_preview_header]
                         df_v_export_detail.to_excel(writer, index=False, sheet_name="取引先別明細")
 
-                        # シート3: 原本データ（該当取引先の商品のみフィルタリング・重複ヘッダーなし）
+                        # シート3: 原本データ（該当取引先の商品のみフィルタリング）
                         if df_raw_export is not None:
                             if raw_export_type == "POSデータ":
                                 df_pos_filt = df_raw_export[df_raw_export["商品コード"].astype(str).str.strip().isin(v_jan_list)]
