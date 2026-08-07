@@ -590,19 +590,17 @@ if uploaded_files:
                         elif apportion_base == "付与ポイント": df_detail_grouped["apportion_val"] = df_detail_grouped["points_clean"]
                         else: df_detail_grouped["apportion_val"] = df_detail_grouped["sales"]
 
-                    # POS原本フィルタリングエクスポートデータ作成
+                    # POS原本フィルタリングエクスポートデータ作成（重複ヘッダーを防止）
                     keep_cols = [1, 23, 24, 48, 50, 51, 52, 53, 55, 56, 57, 58]
-                    df_pos_export = df_pos_raw.iloc[5:].copy().reset_index(drop=True)
-                    df_pos_export = df_pos_export.iloc[:, keep_cols]
+                    df_pos_export_raw = df_pos_raw.iloc[6:].copy().reset_index(drop=True)
+                    df_pos_export = df_pos_export_raw.iloc[:, keep_cols].copy()
                     df_pos_export.columns = [pos_headers_row[i] for i in keep_cols]
 
-                    header_row_pos = df_pos_export.iloc[[0]].copy()
-                    data_rows_pos = df_pos_export.iloc[1:].copy()
-                    data_rows_pos["HC番号"] = data_rows_pos["HC番号"].apply(lambda x: mask_member_id(x) if str(x).strip() != "_" else "_")
-                    data_rows_pos["店舗コード"] = data_rows_pos["店舗コード"].apply(
+                    df_pos_export["HC番号"] = df_pos_export["HC番号"].apply(lambda x: mask_member_id(x) if str(x).strip() != "_" else "_")
+                    df_pos_export["店舗コード"] = df_pos_export["店舗コード"].apply(
                         lambda x: str(int(float(x))).zfill(3) if pd.notna(x) and str(x).replace(".0","").isdigit() else str(x).strip().zfill(3) if pd.notna(x) else "999"
                     )
-                    df_raw_export = pd.concat([header_row_pos, data_rows_pos], ignore_index=True)
+                    df_raw_export = df_pos_export
 
                 # ====================================================
                 # 取引先別ファイルの生成処理 (Excel / ZIP)
@@ -707,12 +705,10 @@ if uploaded_files:
                         df_v_export_detail.columns = ["取引先コード", "取引先名", "店コード", "店舗名", "品番", sales_preview_header]
                         df_v_export_detail.to_excel(writer, index=False, sheet_name="取引先別明細")
 
-                        # シート3: 原本データ（該当取引先の商品のみフィルタリング）
+                        # シート3: 原本データ（該当取引先の商品のみフィルタリング・重複ヘッダーなし）
                         if df_raw_export is not None:
                             if raw_export_type == "POSデータ":
-                                df_pos_filt = df_raw_export[
-                                    (df_raw_export.index == 0) | (df_raw_export["商品コード"].astype(str).str.strip().isin(v_jan_list))
-                                ]
+                                df_pos_filt = df_raw_export[df_raw_export["商品コード"].astype(str).str.strip().isin(v_jan_list)]
                                 df_pos_filt.to_excel(writer, index=False, sheet_name="POSデータ")
                             elif raw_export_type == "HC会員売上":
                                 jan_col_name = next((c for c in df_raw_export.columns if "jan" in str(c).lower() or "商品コード" in str(c)), None)
@@ -809,7 +805,6 @@ if uploaded_files:
                 col_dl, col_rst = st.columns([1, 1])
 
                 if len(generated_files) == 1:
-                    # 取引先が1社のみの場合: 直でExcelダウンロード
                     f_name, f_data = generated_files[0]
                     with col_dl:
                         st.download_button(
@@ -820,7 +815,6 @@ if uploaded_files:
                             use_container_width=True,
                         )
                 else:
-                    # 取引先が複数の場合: ZIPアーカイブで一括ダウンロード
                     zip_buffer = io.BytesIO()
                     zip_filename = f"【{clean_filename(plan_category)}】{clean_filename(plan_name)}_取引先別集計.zip"
 
